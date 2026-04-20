@@ -10,7 +10,9 @@ import {
   saveSlot,
   slotExists,
 } from "../persistence/save.js";
+import type { Npc } from "../game/npc.js";
 import { showLoading } from "./loading.js";
+import { mountDialog } from "./screens/dialog.js";
 import { type GameSession, mountGame } from "./screens/game.js";
 import { mountGenrePicker } from "./screens/genrePicker.js";
 import { mountMenu } from "./screens/menu.js";
@@ -88,12 +90,22 @@ export function createApp(): App {
 
   const showMenu = (): void => {
     unmountCurrent?.();
-    unmountCurrent = mountMenu(screen, {
-      onNewGame: () => showNewGamePrompt(),
-      onContinue: () => showContinue(),
-      onSettings: () => showNotImplemented("Settings"),
-      onQuit: quit,
-    });
+    let saveCount = 0;
+    try {
+      saveCount = listSaves().length;
+    } catch {
+      // silent
+    }
+    unmountCurrent = mountMenu(
+      screen,
+      {
+        onNewGame: () => showNewGamePrompt(),
+        onContinue: () => showContinue(),
+        onSettings: () => showNotImplemented("Settings"),
+        onQuit: quit,
+      },
+      { saveCount },
+    );
   };
 
   const showNewGamePrompt = (errorMessage?: string): void => {
@@ -173,7 +185,32 @@ export function createApp(): App {
     unmountCurrent = mountGame(screen, session, {
       onExit: () => showMenu(),
       onSave: (s) => saveSlot(s.slot.slug, s.state),
+      onTalk: (s, npc) => showDialog(s, npc),
     });
+  };
+
+  const showDialog = (session: GameSession, npc: Npc): void => {
+    unmountCurrent?.();
+    unmountCurrent = mountDialog(
+      screen,
+      {
+        npc,
+        state: session.state,
+        gateway: getGateway(),
+      },
+      {
+        onClose: (updated) => {
+          const idx = session.state.npcs.findIndex((n) => n.id === updated.id);
+          if (idx >= 0) session.state.npcs[idx] = updated;
+          try {
+            saveSlot(session.slot.slug, session.state);
+          } catch {
+            // silent
+          }
+          startGame(session);
+        },
+      },
+    );
   };
 
   return {

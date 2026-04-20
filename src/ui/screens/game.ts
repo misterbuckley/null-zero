@@ -1,10 +1,12 @@
 import type { Widgets } from "blessed";
 import blessed from "neo-blessed";
+import type { Npc } from "../../game/npc.js";
 import { type GameState, pushLog } from "../../game/state.js";
 import type { SaveMeta } from "../../persistence/save.js";
 import { tileAt } from "../../world/region.js";
 import { isPassable } from "../../world/tile.js";
-import { buildRegionCache, renderRow } from "../regionCache.js";
+import { NPC_GLYPH, PLAYER_GLYPH, buildRegionCache, renderRow } from "../regionCache.js";
+import { mountHelp } from "./help.js";
 
 export interface GameSession {
   slot: SaveMeta;
@@ -14,6 +16,7 @@ export interface GameSession {
 export interface GameScreenHandlers {
   onExit: () => void;
   onSave: (session: GameSession) => void;
+  onTalk: (session: GameSession, npc: Npc) => void;
 }
 
 type KeyBinding = [string[], () => void];
@@ -57,7 +60,7 @@ export function mountGame(
     border: { type: "line" },
     style: { border: { fg: "grey" }, bg: "black" },
     padding: { left: 1, right: 1 },
-    label: ` ${session.slot.name}${state.region.flavor ? ` · ${state.region.flavor.name}` : ""} `,
+    label: ` ${session.slot.name} · ${state.genre}${state.region.flavor ? ` · ${state.region.flavor.name}` : ""} `,
   });
 
   const cache = buildRegionCache(state.region);
@@ -91,13 +94,14 @@ export function mountGame(
         lines[row] = "";
         continue;
       }
-      lines[row] = renderRow(
-        cache,
-        y,
-        camX,
-        camX + innerW,
-        py === y ? px : null,
-      );
+
+      const overlays = [];
+      for (const npc of state.npcs) {
+        if (npc.y === y) overlays.push({ x: npc.x, glyph: NPC_GLYPH });
+      }
+      if (py === y) overlays.push({ x: px, glyph: PLAYER_GLYPH });
+
+      lines[row] = renderRow(cache, y, camX, camX + innerW, overlays);
     }
     viewport.setContent(lines.join("\n"));
 
@@ -125,9 +129,42 @@ export function mountGame(
       render();
       return;
     }
+    if (state.npcs.some((n) => n.x === nx && n.y === ny)) {
+      pushLog(state, "Someone is standing there. Press t to speak.");
+      render();
+      return;
+    }
     state.player.x = nx;
     state.player.y = ny;
     render();
+  };
+
+  const talk = () => {
+    const npc = findAdjacentNpc();
+    if (!npc) {
+      pushLog(state, "No one is near enough to hear you.");
+      render();
+      return;
+    }
+    handlers.onTalk(session, npc);
+  };
+
+  const findAdjacentNpc = (): Npc | null => {
+    const px = state.player.x;
+    const py = state.player.y;
+    let best: Npc | null = null;
+    let bestDist = Infinity;
+    for (const npc of state.npcs) {
+      const dx = npc.x - px;
+      const dy = npc.y - py;
+      if (Math.abs(dx) > 1 || Math.abs(dy) > 1) continue;
+      const d = dx * dx + dy * dy;
+      if (d < bestDist) {
+        best = npc;
+        bestDist = d;
+      }
+    }
+    return best;
   };
 
   const manualSave = () => {
@@ -151,12 +188,27 @@ export function mountGame(
   const autosaveTimer = setInterval(autosave, AUTOSAVE_INTERVAL_MS);
 
   const exit = () => {
+    if (unmountHelp) return;
     try {
       handlers.onSave(session);
     } catch {
       // silent
     }
     handlers.onExit();
+  };
+
+  let unmountHelp: (() => void) | null = null;
+  const toggleHelp = () => {
+    if (unmountHelp) {
+      unmountHelp();
+      unmountHelp = null;
+      return;
+    }
+    unmountHelp = mountHelp(screen, {
+      onClose: () => {
+        unmountHelp = null;
+      },
+    });
   };
 
   const bindings: KeyBinding[] = [
@@ -168,6 +220,8 @@ export function mountGame(
     [["u"], () => attempt(1, -1)],
     [["b"], () => attempt(-1, 1)],
     [["n"], () => attempt(1, 1)],
+    [["t"], talk],
+    [["?"], toggleHelp],
     [["S"], manualSave],
     [["q", "escape"], exit],
   ];
@@ -182,6 +236,8 @@ export function mountGame(
     for (const [keys, fn] of bindings) {
       for (const key of keys) screen.unkey(key, fn);
     }
+    unmountHelp?.();
+    unmountHelp = null;
     container.destroy();
     screen.render();
   };

@@ -1,5 +1,12 @@
 import { existsSync, readdirSync, unlinkSync } from "node:fs";
-import { type RegionFlavor, RegionFlavorSchema } from "../ai/schemas.js";
+import {
+  NpcPersonaSchema,
+  type RegionFlavor,
+  RegionFlavorSchema,
+  type StoryBible,
+  StoryBibleSchema,
+} from "../ai/schemas.js";
+import type { DialogTurn, Npc } from "../game/npc.js";
 import type { GameState } from "../game/state.js";
 import { decodeTiles, encodeTiles } from "./codec.js";
 import { type Db, openDb } from "./db.js";
@@ -9,8 +16,10 @@ export interface SaveMeta {
   slug: string;
   name: string;
   seed: number;
+  genre: string;
   createdAt: number;
   lastPlayedAt: number;
+  playedMs: number;
 }
 
 export function listSaves(): SaveMeta[] {
@@ -58,10 +67,19 @@ export function createSlot(name: string, seed: number, state: GameState): SaveMe
       setMeta(db, "genre", state.genre);
       setMeta(db, "created_at", String(now));
       setMeta(db, "last_played_at", String(now));
+      setMeta(db, "played_ms", "0");
       writeState(db, state);
     });
     tx();
-    return { slug, name, seed, createdAt: now, lastPlayedAt: now };
+    return {
+      slug,
+      name,
+      seed,
+      genre: state.genre,
+      createdAt: now,
+      lastPlayedAt: now,
+      playedMs: 0,
+    };
   } finally {
     db.close();
   }
@@ -72,8 +90,15 @@ export function saveSlot(slug: string, state: GameState): void {
   if (!existsSync(p)) throw new Error(`Slot "${slug}" not found`);
   const db = openDb(p);
   try {
+    const now = Date.now();
     const tx = db.transaction(() => {
-      setMeta(db, "last_played_at", String(Date.now()));
+      const prevLast = Number(readMetaValue(db, "last_played_at") ?? now);
+      const prevPlayed = Number(readMetaValue(db, "played_ms") ?? 0);
+      const delta = Math.max(0, now - prevLast);
+      // cap a single save's contribution at 10 min to avoid huge bumps from idle gaps
+      const capped = Math.min(delta, 10 * 60 * 1000);
+      setMeta(db, "last_played_at", String(now));
+      setMeta(db, "played_ms", String(prevPlayed + capped));
       setMeta(db, "genre", state.genre);
       writeState(db, state);
     });
@@ -81,6 +106,13 @@ export function saveSlot(slug: string, state: GameState): void {
   } finally {
     db.close();
   }
+}
+
+function readMetaValue(db: Db, key: string): string | null {
+  const row = db.prepare("SELECT value FROM meta WHERE key = ?").get(key) as
+    | { value: string }
+    | undefined;
+  return row?.value ?? null;
 }
 
 export function loadSlot(slug: string): { meta: SaveMeta; state: GameState } {
@@ -116,8 +148,10 @@ function getMeta(db: Db, slug: string): SaveMeta {
     slug,
     name: map.get("name") ?? slug,
     seed: Number(map.get("seed") ?? 0),
+    genre: map.get("genre") ?? "dark fantasy",
     createdAt: Number(map.get("created_at") ?? 0),
     lastPlayedAt: Number(map.get("last_played_at") ?? 0),
+    playedMs: Number(map.get("played_ms") ?? 0),
   };
 }
 
@@ -160,6 +194,131 @@ function writeState(db: Db, state: GameState): void {
   db.prepare("DELETE FROM log_entries").run();
   const insertLog = db.prepare("INSERT INTO log_entries (ts, text) VALUES (?, ?)");
   for (const entry of state.log) insertLog.run(entry.ts, entry.text);
+
+  writeNpcs(db, state.npcs);
+  writeStory(db, state.bible, state.revealedBeats);
+}
+
+function writeStory(
+  db: Db,
+  bible: StoryBible | null,
+  revealed: Set<string>,
+): void {
+  db.prepare("DELETE FROM story").run();
+  if (bible) {
+    db.prepare("INSERT INTO story (id, bible_json) VALUES (1, ?)").run(
+      JSON.stringify(bible),
+    );
+  }
+
+  db.prepare("DELETE FROM beats_revealed").run();
+  const insert = db.prepare(
+    "INSERT INTO beats_revealed (beat_id, revealed_at) VALUES (?, ?)",
+  );
+  const now = Date.now();
+  for (const id of revealed) insert.run(id, now);
+}
+
+function readStory(db: Db): { bible: StoryBible | null; revealed: Set<string> } {
+  const row = db.prepare("SELECT bible_json FROM story WHERE id = 1").get() as
+    | { bible_json: string }
+    | undefined;
+
+  let bible: StoryBible | null = null;
+  if (row?.bible_json) {
+    try {
+      bible = StoryBibleSchema.parse(JSON.parse(row.bible_json));
+    } catch {
+      bible = null;
+    }
+  }
+
+  const revealed = new Set<string>();
+  const beatRows = db.prepare("SELECT beat_id FROM beats_revealed").all() as {
+    beat_id: string;
+  }[];
+  for (const r of beatRows) revealed.add(r.beat_id);
+
+  return { bible, revealed };
+}
+
+function writeNpcs(db: Db, npcs: Npc[]): void {
+  db.prepare("DELETE FROM dialog_turns").run();
+  db.prepare("DELETE FROM npcs").run();
+
+  const insertNpc = db.prepare(
+    `INSERT INTO npcs (id, region_id, x, y, persona_json, memory_summary)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+  );
+  const insertTurn = db.prepare(
+    `INSERT INTO dialog_turns (npc_id, turn_idx, role, content, ts)
+     VALUES (?, ?, ?, ?, ?)`,
+  );
+
+  for (const npc of npcs) {
+    insertNpc.run(
+      npc.id,
+      npc.regionId,
+      npc.x,
+      npc.y,
+      JSON.stringify(npc.persona),
+      npc.memorySummary,
+    );
+    npc.turns.forEach((turn, idx) => {
+      insertTurn.run(npc.id, idx, turn.role, turn.content, turn.ts);
+    });
+  }
+}
+
+function readNpcs(db: Db, regionId: string): Npc[] {
+  const rows = db
+    .prepare(
+      "SELECT id, region_id, x, y, persona_json, memory_summary FROM npcs WHERE region_id = ?",
+    )
+    .all(regionId) as {
+    id: string;
+    region_id: string;
+    x: number;
+    y: number;
+    persona_json: string;
+    memory_summary: string;
+  }[];
+
+  const npcs: Npc[] = [];
+  const turnStmt = db.prepare(
+    "SELECT role, content, ts FROM dialog_turns WHERE npc_id = ? ORDER BY turn_idx",
+  );
+
+  for (const row of rows) {
+    let persona;
+    try {
+      persona = NpcPersonaSchema.parse(JSON.parse(row.persona_json));
+    } catch {
+      continue; // drop corrupted npc silently
+    }
+    const turnRows = turnStmt.all(row.id) as {
+      role: string;
+      content: string;
+      ts: number;
+    }[];
+    const turns: DialogTurn[] = turnRows
+      .filter((t) => t.role === "player" || t.role === "npc")
+      .map((t) => ({
+        role: t.role as "player" | "npc",
+        content: t.content,
+        ts: t.ts,
+      }));
+    npcs.push({
+      id: row.id,
+      regionId: row.region_id,
+      x: row.x,
+      y: row.y,
+      persona,
+      memorySummary: row.memory_summary,
+      turns,
+    });
+  }
+  return npcs;
 }
 
 function readState(db: Db): GameState {
@@ -206,6 +365,9 @@ function readState(db: Db): GameState {
     }
   }
 
+  const npcs = readNpcs(db, region.id);
+  const story = readStory(db);
+
   return {
     genre,
     region: {
@@ -218,5 +380,8 @@ function readState(db: Db): GameState {
     },
     player: { x: player.x, y: player.y },
     log,
+    npcs,
+    bible: story.bible,
+    revealedBeats: story.revealed,
   };
 }

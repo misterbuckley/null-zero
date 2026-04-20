@@ -1,4 +1,6 @@
+import type { StoryBible } from "../ai/schemas.js";
 import type { Region } from "../world/region.js";
+import type { Npc } from "./npc.js";
 
 export interface LogEntry {
   ts: number;
@@ -10,6 +12,9 @@ export interface GameState {
   region: Region;
   player: { x: number; y: number };
   log: LogEntry[];
+  npcs: Npc[];
+  bible: StoryBible | null;
+  revealedBeats: Set<string>;
 }
 
 const MAX_LOG = 200;

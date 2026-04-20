@@ -46,6 +46,48 @@ const MIGRATIONS: string[] = [
   DELETE FROM schema_version;
   INSERT INTO schema_version (version) VALUES (2);
   `,
+
+  // v3 — NPCs and dialog history
+  `
+  CREATE TABLE IF NOT EXISTS npcs (
+    id TEXT PRIMARY KEY,
+    region_id TEXT NOT NULL,
+    x INTEGER NOT NULL,
+    y INTEGER NOT NULL,
+    persona_json TEXT NOT NULL,
+    memory_summary TEXT NOT NULL DEFAULT ''
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_npcs_region ON npcs(region_id);
+
+  CREATE TABLE IF NOT EXISTS dialog_turns (
+    npc_id TEXT NOT NULL,
+    turn_idx INTEGER NOT NULL,
+    role TEXT NOT NULL,
+    content TEXT NOT NULL,
+    ts INTEGER NOT NULL,
+    PRIMARY KEY (npc_id, turn_idx)
+  );
+
+  DELETE FROM schema_version;
+  INSERT INTO schema_version (version) VALUES (3);
+  `,
+
+  // v4 — story bible and revealed beats
+  `
+  CREATE TABLE IF NOT EXISTS story (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    bible_json TEXT NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS beats_revealed (
+    beat_id TEXT PRIMARY KEY,
+    revealed_at INTEGER NOT NULL
+  );
+
+  DELETE FROM schema_version;
+  INSERT INTO schema_version (version) VALUES (4);
+  `,
 ];
 
 function currentVersion(db: Db): number {

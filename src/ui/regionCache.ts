@@ -9,6 +9,12 @@ export interface RegionCache {
 }
 
 export const PLAYER_GLYPH = "{cyan-fg}{bold}@{/}";
+export const NPC_GLYPH = "{yellow-fg}{bold}@{/}";
+
+export interface Overlay {
+  x: number;
+  glyph: string;
+}
 
 export function buildRegionCache(region: Region): RegionCache {
   const rows: string[] = [];
@@ -39,7 +45,7 @@ export function renderRow(
   y: number,
   startCol: number,
   endCol: number,
-  playerX: number | null,
+  overlays: Overlay[],
 ): string {
   const row = cache.rows[y];
   const off = cache.offsets[y];
@@ -49,11 +55,19 @@ export function renderRow(
   const e = Math.min(cache.width, endCol);
   if (s >= e) return "";
 
-  if (playerX !== null && playerX >= s && playerX < e) {
-    const before = row.slice(off[s], off[playerX]);
-    const after = row.slice(off[playerX + 1], off[e]);
-    return before + PLAYER_GLYPH + after;
-  }
+  const visible = overlays
+    .filter((o) => o.x >= s && o.x < e)
+    .sort((a, b) => a.x - b.x);
 
-  return row.slice(off[s], off[e]);
+  if (visible.length === 0) return row.slice(off[s], off[e]);
+
+  const out: string[] = [];
+  let cursor = s;
+  for (const o of visible) {
+    if (o.x > cursor) out.push(row.slice(off[cursor], off[o.x]));
+    out.push(o.glyph);
+    cursor = o.x + 1;
+  }
+  if (cursor < e) out.push(row.slice(off[cursor], off[e]));
+  return out.join("");
 }

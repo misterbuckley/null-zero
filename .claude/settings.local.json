@@ -8,7 +8,10 @@
       "Bash(timeout 2 bash -c 'script -qc \"npm run dev\" /dev/null < /dev/null')",
       "Bash(npx tsx *)",
       "Bash(node *)",
-      "Bash(npm uninstall *)"
+      "Bash(npm uninstall *)",
+      "Bash(npx tsc *)",
+      "Bash(echo \"exit=$?\")",
+      "Bash(echo \"boot exit=$?\")"
     ]
   }
 }

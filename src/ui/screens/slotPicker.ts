@@ -1,6 +1,6 @@
 import type { Widgets } from "blessed";
 import blessed from "neo-blessed";
-import type { SaveMeta } from "../../persistence/save.js";
+import { deleteSlot, type SaveMeta } from "../../persistence/save.js";
 
 export interface SlotPickerHandlers {
   onSelect: (slug: string) => void;
@@ -8,14 +8,35 @@ export interface SlotPickerHandlers {
 }
 
 function formatSlot(s: SaveMeta): string {
-  const when = new Date(s.lastPlayedAt);
-  const iso = `${when.getFullYear()}-${pad(when.getMonth() + 1)}-${pad(when.getDate())} ${pad(when.getHours())}:${pad(when.getMinutes())}`;
-  const name = truncate(s.name, 28).padEnd(28);
-  return `  ${name}  ${iso}`;
+  const name = truncate(s.name, 20).padEnd(20);
+  const genre = truncate(s.genre, 14).padEnd(14);
+  const last = relativeTime(s.lastPlayedAt);
+  const play = formatDuration(s.playedMs);
+  return `  ${name}  ${genre}  ${last.padStart(10)}  ${play.padStart(6)}`;
 }
 
-function pad(n: number): string {
-  return n.toString().padStart(2, "0");
+function relativeTime(ts: number): string {
+  if (!ts) return "—";
+  const delta = Date.now() - ts;
+  if (delta < 60_000) return "just now";
+  const mins = Math.floor(delta / 60_000);
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days}d ago`;
+  const weeks = Math.floor(days / 7);
+  if (weeks < 5) return `${weeks}w ago`;
+  return new Date(ts).toISOString().slice(0, 10);
+}
+
+function formatDuration(ms: number): string {
+  if (ms <= 0) return "0m";
+  const mins = Math.floor(ms / 60_000);
+  if (mins < 60) return `${mins}m`;
+  const hours = Math.floor(mins / 60);
+  const rem = mins % 60;
+  return rem === 0 ? `${hours}h` : `${hours}h${rem}m`;
 }
 
 function truncate(s: string, n: number): string {
@@ -24,15 +45,17 @@ function truncate(s: string, n: number): string {
 
 export function mountSlotPicker(
   screen: Widgets.Screen,
-  slots: SaveMeta[],
+  initialSlots: SaveMeta[],
   handlers: SlotPickerHandlers,
 ): () => void {
-  const height = Math.max(10, Math.min(slots.length + 6, 20));
+  let slots = [...initialSlots];
+
+  const height = Math.max(12, Math.min(slots.length + 8, 22));
   const panel = blessed.box({
     parent: screen,
     top: "center",
     left: "center",
-    width: 60,
+    width: 78,
     height,
     tags: true,
     border: { type: "line" },
@@ -42,22 +65,35 @@ export function mountSlotPicker(
 
   blessed.text({
     parent: panel,
+    top: 1,
+    left: 1,
+    width: "100%-3",
+    height: 1,
+    content: `  ${"name".padEnd(20)}  ${"genre".padEnd(14)}  ${"last played".padStart(10)}  ${"time".padStart(6)}`,
+    tags: false,
+    style: { fg: "grey" },
+  });
+
+  blessed.text({
+    parent: panel,
     bottom: 0,
     left: 1,
     width: "100%-3",
     height: 1,
-    content: "{grey-fg}enter load · esc cancel{/grey-fg}",
+    content: "{grey-fg}enter load · d delete · esc cancel{/grey-fg}",
     tags: true,
   });
+
+  const listHeight = height - 5;
 
   if (slots.length === 0) {
     blessed.text({
       parent: panel,
-      top: 2,
+      top: 3,
       left: "center",
       width: "shrink",
       height: 1,
-      content: "{grey-fg}No saved games yet.{/grey-fg}",
+      content: "{grey-fg}No saved games yet. Press esc to go back.{/grey-fg}",
       tags: true,
     });
 
@@ -75,10 +111,10 @@ export function mountSlotPicker(
 
   const list = blessed.list({
     parent: panel,
-    top: 1,
+    top: 2,
     left: 1,
     width: "100%-3",
-    height: height - 4,
+    height: listHeight,
     items: slots.map(formatSlot),
     keys: true,
     vi: true,
@@ -90,11 +126,82 @@ export function mountSlotPicker(
     },
   });
 
+  const selectedIndex = (): number => {
+    const raw = (list as unknown as { selected?: number }).selected;
+    return typeof raw === "number" ? raw : 0;
+  };
+
+  const confirmDelete = (slot: SaveMeta) => {
+    const modal = blessed.box({
+      parent: screen,
+      top: "center",
+      left: "center",
+      width: 50,
+      height: 7,
+      tags: true,
+      border: { type: "line" },
+      style: { border: { fg: "red" }, bg: "black" },
+      label: " Delete save? ",
+    });
+
+    blessed.text({
+      parent: modal,
+      top: 1,
+      left: 1,
+      width: "100%-3",
+      height: 2,
+      content: `Delete "${truncate(slot.name, 30)}"?\n{grey-fg}This cannot be undone.{/grey-fg}`,
+      tags: true,
+    });
+
+    blessed.text({
+      parent: modal,
+      bottom: 0,
+      left: 1,
+      width: "100%-3",
+      height: 1,
+      content: "{grey-fg}y delete · n or esc cancel{/grey-fg}",
+      tags: true,
+    });
+
+    const cleanup = () => {
+      screen.unkey("y", onYes);
+      for (const k of ["n", "escape"]) screen.unkey(k, onNo);
+      modal.destroy();
+      screen.render();
+      list.focus();
+    };
+    const onYes = () => {
+      try {
+        deleteSlot(slot.slug);
+      } catch {
+        // silent
+      }
+      slots = slots.filter((s) => s.slug !== slot.slug);
+      list.setItems(slots.map(formatSlot));
+      if (slots.length === 0) {
+        cleanup();
+        handlers.onCancel();
+        return;
+      }
+      cleanup();
+    };
+    const onNo = () => cleanup();
+
+    screen.key(["y"], onYes);
+    screen.key(["n", "escape"], onNo);
+    screen.render();
+  };
+
   list.on("select", (_item: unknown, index: number) => {
     const slot = slots[index];
     if (slot) handlers.onSelect(slot.slug);
   });
   list.key(["escape"], () => handlers.onCancel());
+  list.key(["d"], () => {
+    const slot = slots[selectedIndex()];
+    if (slot) confirmDelete(slot);
+  });
   list.focus();
 
   screen.render();

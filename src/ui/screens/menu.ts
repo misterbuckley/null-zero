@@ -8,6 +8,10 @@ export interface MenuHandlers {
   onQuit: () => void;
 }
 
+export interface MenuOptions {
+  saveCount: number;
+}
+
 const TITLE_ART = [
   "  ███╗   ██╗██╗   ██╗██╗     ██╗     ",
   "  ████╗  ██║██║   ██║██║     ██║     ",
@@ -22,14 +26,23 @@ const TAGLINE = "a world that writes itself";
 
 type MenuKey = "new" | "continue" | "settings" | "quit";
 
-const ITEMS: { label: string; key: MenuKey }[] = [
-  { label: "  New Game  ", key: "new" },
-  { label: "  Continue  ", key: "continue" },
-  { label: "  Settings  ", key: "settings" },
-  { label: "  Quit      ", key: "quit" },
-];
+export function mountMenu(
+  screen: Widgets.Screen,
+  handlers: MenuHandlers,
+  opts: MenuOptions,
+): () => void {
+  const continueLabel =
+    opts.saveCount > 0
+      ? `  Continue (${opts.saveCount})`.padEnd(14)
+      : "  Continue    ";
 
-export function mountMenu(screen: Widgets.Screen, handlers: MenuHandlers): () => void {
+  const items: { label: string; key: MenuKey; enabled: boolean }[] = [
+    { label: "  New Game    ", key: "new", enabled: true },
+    { label: continueLabel, key: "continue", enabled: opts.saveCount > 0 },
+    { label: "  Settings    ", key: "settings", enabled: true },
+    { label: "  Quit        ", key: "quit", enabled: true },
+  ];
+
   const panel = blessed.box({
     parent: screen,
     top: "center",
@@ -67,8 +80,8 @@ export function mountMenu(screen: Widgets.Screen, handlers: MenuHandlers): () =>
     top: 10,
     left: "center",
     width: 20,
-    height: ITEMS.length + 2,
-    items: ITEMS.map((item) => item.label),
+    height: items.length + 2,
+    items: items.map((item) => item.label),
     keys: true,
     vi: true,
     mouse: false,
@@ -92,8 +105,8 @@ export function mountMenu(screen: Widgets.Screen, handlers: MenuHandlers): () =>
   });
 
   const choose = (index: number) => {
-    const chosen = ITEMS[index];
-    if (!chosen) return;
+    const chosen = items[index];
+    if (!chosen || !chosen.enabled) return;
     switch (chosen.key) {
       case "new":
         handlers.onNewGame();

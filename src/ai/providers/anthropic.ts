@@ -61,8 +61,33 @@ export function createAnthropicProvider(opts: AnthropicOptions): AIProvider {
       };
     },
 
-    async *stream(_req: CompletionReq): AsyncIterable<StreamChunk> {
-      throw new Error("anthropic streaming not implemented yet (deferred to M5)");
+    async *stream(req: CompletionReq): AsyncIterable<StreamChunk> {
+      const stream = client.messages.stream({
+        model: opts.model,
+        max_tokens: req.maxTokens,
+        system: req.system,
+        messages: req.messages.map((m) => ({ role: m.role, content: m.content })),
+        ...(req.temperature !== undefined ? { temperature: req.temperature } : {}),
+        ...(req.stop ? { stop_sequences: req.stop } : {}),
+      });
+
+      for await (const event of stream) {
+        if (
+          event.type === "content_block_delta" &&
+          event.delta.type === "text_delta"
+        ) {
+          yield { kind: "delta", text: event.delta.text };
+        }
+      }
+
+      const final = await stream.finalMessage();
+      yield {
+        kind: "done",
+        usage: {
+          inputTokens: final.usage.input_tokens,
+          outputTokens: final.usage.output_tokens,
+        },
+      };
     },
   };
 }
