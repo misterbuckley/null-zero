@@ -27,15 +27,11 @@ export const RegionFlavorSchema = z.object({
 export type RegionFlavor = z.infer<typeof RegionFlavorSchema>;
 
 export const NpcPersonaSchema = z.object({
-  name: z
-    .string()
-    .describe("Full name the NPC introduces themselves with (1–4 words)."),
+  name: z.string().describe("Full name the NPC introduces themselves with (1–4 words)."),
   archetype: z
     .string()
     .describe("Short role/archetype — e.g., 'disgraced priest', 'bone-market fence'."),
-  voice: z
-    .string()
-    .describe("One-line description of how they speak: register, tics, cadence."),
+  voice: z.string().describe("One-line description of how they speak: register, tics, cadence."),
   goals: z
     .array(z.string())
     .min(1)
@@ -51,9 +47,7 @@ export const NpcPersonaSchema = z.object({
     .describe(
       "Current stance toward the player, e.g., 'guarded-curious', 'openly hostile', 'indifferent'.",
     ),
-  appearance: z
-    .string()
-    .describe("One or two sentences describing what the player sees."),
+  appearance: z.string().describe("One or two sentences describing what the player sees."),
 });
 
 export type NpcPersona = z.infer<typeof NpcPersonaSchema>;
@@ -62,9 +56,7 @@ export const StoryBeatSchema = z.object({
   id: z
     .string()
     .describe("Short stable identifier like 'b01', 'b02'. Used to track which beats have fired."),
-  title: z
-    .string()
-    .describe("Short evocative title for this beat, 2–6 words."),
+  title: z.string().describe("Short evocative title for this beat, 2–6 words."),
   preconditions: z
     .array(z.string())
     .describe(
@@ -85,9 +77,7 @@ export const StoryBeatSchema = z.object({
 });
 
 export const StoryBibleSchema = z.object({
-  logline: z
-    .string()
-    .describe("One sentence summary of the core story. No fluff."),
+  logline: z.string().describe("One sentence summary of the core story. No fluff."),
   central_mystery: z
     .string()
     .describe("What the player is, on some level, trying to understand. 1–2 sentences."),
@@ -115,7 +105,9 @@ export const StoryBibleSchema = z.object({
     .array(StoryBeatSchema)
     .min(3)
     .max(6)
-    .describe("Soft-ordered beats that can fire as the player plays. Earlier beats should have easier preconditions."),
+    .describe(
+      "Soft-ordered beats that can fire as the player plays. Earlier beats should have easier preconditions.",
+    ),
 });
 
 export type StoryBeat = z.infer<typeof StoryBeatSchema>;

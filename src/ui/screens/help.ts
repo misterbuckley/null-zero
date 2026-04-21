@@ -32,10 +32,7 @@ const SECTIONS: { title: string; rows: [string, string][] }[] = [
   },
 ];
 
-export function mountHelp(
-  screen: Widgets.Screen,
-  handlers: HelpHandlers,
-): () => void {
+export function mountHelp(screen: Widgets.Screen, handlers: HelpHandlers): () => void {
   const lines: string[] = [];
   for (const section of SECTIONS) {
     lines.push(`{cyan-fg}{bold}${section.title}{/}`);

@@ -14,9 +14,7 @@ export function encodeTiles(tiles: Tile[]): Buffer {
 
 export function decodeTiles(buf: Buffer, expectedLength: number): Tile[] {
   if (buf.length !== expectedLength) {
-    throw new Error(
-      `tile buffer length mismatch: expected ${expectedLength}, got ${buf.length}`,
-    );
+    throw new Error(`tile buffer length mismatch: expected ${expectedLength}, got ${buf.length}`);
   }
   const tiles: Tile[] = new Array(expectedLength);
   for (let i = 0; i < expectedLength; i++) {

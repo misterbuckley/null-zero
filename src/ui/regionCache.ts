@@ -55,9 +55,7 @@ export function renderRow(
   const e = Math.min(cache.width, endCol);
   if (s >= e) return "";
 
-  const visible = overlays
-    .filter((o) => o.x >= s && o.x < e)
-    .sort((a, b) => a.x - b.x);
+  const visible = overlays.filter((o) => o.x >= s && o.x < e).sort((a, b) => a.x - b.x);
 
   if (visible.length === 0) return row.slice(off[s], off[e]);
 

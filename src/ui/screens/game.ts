@@ -76,16 +76,8 @@ export function mountGame(
     const px = state.player.x;
     const py = state.player.y;
 
-    const camX = clamp(
-      px - Math.floor(innerW / 2),
-      0,
-      Math.max(0, region.width - innerW),
-    );
-    const camY = clamp(
-      py - Math.floor(innerH / 2),
-      0,
-      Math.max(0, region.height - innerH),
-    );
+    const camX = clamp(px - Math.floor(innerW / 2), 0, Math.max(0, region.width - innerW));
+    const camY = clamp(py - Math.floor(innerH / 2), 0, Math.max(0, region.height - innerH));
 
     const lines: string[] = new Array(innerH);
     for (let row = 0; row < innerH; row++) {
@@ -107,9 +99,7 @@ export function mountGame(
 
     if (state.log.length !== lastLogLength) {
       lastLogLength = state.log.length;
-      const tail = state.log
-        .slice(-5)
-        .map((entry) => `{white-fg}${entry.text}{/}`);
+      const tail = state.log.slice(-5).map((entry) => `{white-fg}${entry.text}{/}`);
       log.setContent(tail.join("\n"));
     }
 
@@ -153,7 +143,7 @@ export function mountGame(
     const px = state.player.x;
     const py = state.player.y;
     let best: Npc | null = null;
-    let bestDist = Infinity;
+    let bestDist = Number.POSITIVE_INFINITY;
     for (const npc of state.npcs) {
       const dx = npc.x - px;
       const dy = npc.y - py;

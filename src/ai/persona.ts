@@ -7,10 +7,7 @@ export interface PersonaContext {
   region: RegionFlavor | null;
 }
 
-export async function generatePersona(
-  gateway: Gateway,
-  ctx: PersonaContext,
-): Promise<NpcPersona> {
+export async function generatePersona(gateway: Gateway, ctx: PersonaContext): Promise<NpcPersona> {
   const place = ctx.region
     ? `The player encounters them in "${ctx.region.name}": ${ctx.region.description}`
     : "The setting details are unclear.";
@@ -73,8 +70,7 @@ export function fallbackPersona(genre: string): NpcPersona {
       goals: ["keep the east wing door closed for one more night"],
       secrets: ["she has started to hear what's on the other side of it"],
       disposition: "polite, hollow",
-      appearance:
-        "Narrow woman in a grey habit, hands very clean, eyes that do not quite track.",
+      appearance: "Narrow woman in a grey habit, hands very clean, eyes that do not quite track.",
     },
     noir: {
       name: "Detective Mara Voss",

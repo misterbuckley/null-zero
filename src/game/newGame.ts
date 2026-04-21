@@ -3,11 +3,11 @@ import { fallbackFlavor, generateFlavor } from "../ai/flavor.js";
 import type { Gateway } from "../ai/gateway.js";
 import { fallbackPersona, generatePersona } from "../ai/persona.js";
 import type { NpcPersona, RegionFlavor, StoryBible } from "../ai/schemas.js";
+import { generateCave } from "../world/generator/cave.js";
 import type { Region } from "../world/region.js";
 import { tileAt } from "../world/region.js";
 import { type RNG, mulberry32, randInt } from "../world/rng.js";
 import type { Npc } from "./npc.js";
-import { generateCave } from "../world/generator/cave.js";
 import type { GameState } from "./state.js";
 
 export interface NewGameOptions {
@@ -108,10 +108,7 @@ async function safeGeneratePersona(
   }
 }
 
-function pickFloorAwayFromSpawn(
-  region: Region,
-  rng: RNG,
-): { x: number; y: number } | null {
+function pickFloorAwayFromSpawn(region: Region, rng: RNG): { x: number; y: number } | null {
   const candidates: { x: number; y: number }[] = [];
   const { spawn } = region;
   for (let y = 0; y < region.height; y++) {

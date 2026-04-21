@@ -1,5 +1,5 @@
-import { fillRegion, type Region, setTile, tileAt } from "../region.js";
-import { randInt, type RNG } from "../rng.js";
+import { type Region, fillRegion, setTile, tileAt } from "../region.js";
+import { type RNG, randInt } from "../rng.js";
 import { FLOOR, type Tile, WALL } from "../tile.js";
 
 export interface CaveOptions {

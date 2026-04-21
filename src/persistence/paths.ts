@@ -4,10 +4,19 @@ import { join } from "node:path";
 
 const ROOT = join(homedir(), ".null-zero");
 
+export function rootDir(): string {
+  mkdirSync(ROOT, { recursive: true });
+  return ROOT;
+}
+
 export function savesDir(): string {
   const dir = join(ROOT, "saves");
   mkdirSync(dir, { recursive: true });
   return dir;
+}
+
+export function settingsPath(): string {
+  return join(rootDir(), "settings.json");
 }
 
 export function slotPath(slug: string): string {

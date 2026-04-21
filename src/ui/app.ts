@@ -1,22 +1,17 @@
 import blessed from "neo-blessed";
-import { createGateway, type Gateway } from "../ai/gateway.js";
+import { type Gateway, createGateway, hasUsableProvider } from "../ai/gateway.js";
 import { loadSettings } from "../config/settings.js";
 import { newGame } from "../game/newGame.js";
-import { slugify } from "../persistence/paths.js";
-import {
-  createSlot,
-  listSaves,
-  loadSlot,
-  saveSlot,
-  slotExists,
-} from "../persistence/save.js";
 import type { Npc } from "../game/npc.js";
+import { slugify } from "../persistence/paths.js";
+import { createSlot, listSaves, loadSlot, saveSlot, slotExists } from "../persistence/save.js";
 import { showLoading } from "./loading.js";
 import { mountDialog } from "./screens/dialog.js";
 import { type GameSession, mountGame } from "./screens/game.js";
 import { mountGenrePicker } from "./screens/genrePicker.js";
 import { mountMenu } from "./screens/menu.js";
 import { mountNewGamePrompt } from "./screens/newGamePrompt.js";
+import { mountSettings } from "./screens/settings.js";
 import { mountSlotPicker } from "./screens/slotPicker.js";
 
 export interface App {
@@ -42,24 +37,6 @@ export function createApp(): App {
 
   screen.key(["C-c"], quit);
 
-  const showNotImplemented = (label: string) => {
-    const note = blessed.message({
-      parent: screen,
-      top: "center",
-      left: "center",
-      width: "shrink",
-      height: "shrink",
-      padding: { left: 2, right: 2, top: 1, bottom: 1 },
-      border: { type: "line" },
-      style: { border: { fg: "yellow" }, fg: "white" },
-      tags: true,
-    });
-    note.display(`{yellow-fg}${label}{/} is not wired up yet.`, 2, () => {
-      note.destroy();
-      screen.render();
-    });
-  };
-
   const showError = (message: string) => {
     const note = blessed.message({
       parent: screen,
@@ -81,7 +58,7 @@ export function createApp(): App {
   const getGateway = (): Gateway | null => {
     try {
       const settings = loadSettings();
-      if (!settings.apiKeys.anthropic) return null;
+      if (!hasUsableProvider(settings)) return null;
       return createGateway(settings);
     } catch {
       return null;
@@ -101,11 +78,18 @@ export function createApp(): App {
       {
         onNewGame: () => showNewGamePrompt(),
         onContinue: () => showContinue(),
-        onSettings: () => showNotImplemented("Settings"),
+        onSettings: () => showSettings(),
         onQuit: quit,
       },
       { saveCount },
     );
+  };
+
+  const showSettings = (): void => {
+    unmountCurrent?.();
+    unmountCurrent = mountSettings(screen, {
+      onClose: () => showMenu(),
+    });
   };
 
   const showNewGamePrompt = (errorMessage?: string): void => {

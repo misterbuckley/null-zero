@@ -84,9 +84,7 @@ export function mountDialog(
     blocks.push(`{grey-fg}${working.persona.appearance}{/}`);
     for (const turn of working.turns) blocks.push(renderTurn(turn, working.persona.name));
     if (streaming) {
-      blocks.push(
-        `{cyan-fg}{bold}${working.persona.name}{/}\n  ${liveBuffer}`,
-      );
+      blocks.push(`{cyan-fg}{bold}${working.persona.name}{/}\n  ${liveBuffer}`);
     }
     transcript.setContent(blocks.join("\n\n"));
     transcript.setScrollPerc(100);
@@ -176,7 +174,12 @@ export function mountDialog(
   });
 
   const bindings: KeyBinding[] = [
-    [["escape"], () => { if (!streaming) close(); }],
+    [
+      ["escape"],
+      () => {
+        if (!streaming) close();
+      },
+    ],
   ];
   for (const [keys, fn] of bindings) screen.key(keys, fn);
 

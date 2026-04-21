@@ -8,10 +8,7 @@ export interface FlavorContext {
   adjacentSummaries?: string[];
 }
 
-export async function generateFlavor(
-  gateway: Gateway,
-  ctx: FlavorContext,
-): Promise<RegionFlavor> {
+export async function generateFlavor(gateway: Gateway, ctx: FlavorContext): Promise<RegionFlavor> {
   const adjacency = ctx.adjacentSummaries?.length
     ? `Nearby regions the player has already explored:\n${ctx.adjacentSummaries
         .map((s) => `- ${s}`)

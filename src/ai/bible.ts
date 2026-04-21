@@ -6,10 +6,7 @@ export interface BibleContext {
   genre: string;
 }
 
-export async function generateBible(
-  gateway: Gateway,
-  ctx: BibleContext,
-): Promise<StoryBible> {
+export async function generateBible(gateway: Gateway, ctx: BibleContext): Promise<StoryBible> {
   const user = `
 You are writing the hidden story bible for a new "${ctx.genre}" roguelike playthrough.
 The player will never read this directly. It exists so the game can reveal beats gradually through NPCs, documents, and environmental detail.

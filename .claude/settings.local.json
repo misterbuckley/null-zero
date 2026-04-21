@@ -11,7 +11,9 @@
       "Bash(npm uninstall *)",
       "Bash(npx tsc *)",
       "Bash(echo \"exit=$?\")",
-      "Bash(echo \"boot exit=$?\")"
+      "Bash(echo \"boot exit=$?\")",
+      "Bash(pnpm tsc *)",
+      "Bash(npx biome *)"
     ]
   }
 }

@@ -199,22 +199,14 @@ function writeState(db: Db, state: GameState): void {
   writeStory(db, state.bible, state.revealedBeats);
 }
 
-function writeStory(
-  db: Db,
-  bible: StoryBible | null,
-  revealed: Set<string>,
-): void {
+function writeStory(db: Db, bible: StoryBible | null, revealed: Set<string>): void {
   db.prepare("DELETE FROM story").run();
   if (bible) {
-    db.prepare("INSERT INTO story (id, bible_json) VALUES (1, ?)").run(
-      JSON.stringify(bible),
-    );
+    db.prepare("INSERT INTO story (id, bible_json) VALUES (1, ?)").run(JSON.stringify(bible));
   }
 
   db.prepare("DELETE FROM beats_revealed").run();
-  const insert = db.prepare(
-    "INSERT INTO beats_revealed (beat_id, revealed_at) VALUES (?, ?)",
-  );
+  const insert = db.prepare("INSERT INTO beats_revealed (beat_id, revealed_at) VALUES (?, ?)");
   const now = Date.now();
   for (const id of revealed) insert.run(id, now);
 }
@@ -322,9 +314,9 @@ function readNpcs(db: Db, regionId: string): Npc[] {
 }
 
 function readState(db: Db): GameState {
-  const player = db
-    .prepare("SELECT region_id, x, y FROM player WHERE id = 1")
-    .get() as { region_id: string; x: number; y: number } | undefined;
+  const player = db.prepare("SELECT region_id, x, y FROM player WHERE id = 1").get() as
+    | { region_id: string; x: number; y: number }
+    | undefined;
   if (!player) throw new Error("no player record in save");
 
   const region = db
@@ -345,9 +337,10 @@ function readState(db: Db): GameState {
   if (!region) throw new Error(`region ${player.region_id} not found`);
 
   const tiles = decodeTiles(region.tiles, region.width * region.height);
-  const log = db
-    .prepare("SELECT ts, text FROM log_entries ORDER BY idx")
-    .all() as { ts: number; text: string }[];
+  const log = db.prepare("SELECT ts, text FROM log_entries ORDER BY idx").all() as {
+    ts: number;
+    text: string;
+  }[];
 
   const metaRows = db.prepare("SELECT key, value FROM meta").all() as {
     key: string;

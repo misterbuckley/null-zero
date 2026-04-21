@@ -1,11 +1,5 @@
 import { newGame } from "../src/game/newGame.js";
-import {
-  createSlot,
-  deleteSlot,
-  listSaves,
-  loadSlot,
-  saveSlot,
-} from "../src/persistence/save.js";
+import { createSlot, deleteSlot, listSaves, loadSlot, saveSlot } from "../src/persistence/save.js";
 import { markRevealed, pickPlantableBeat } from "../src/story/beats.js";
 
 const testName = `roundtrip-${Date.now()}`;
@@ -20,7 +14,10 @@ console.log("created:", slot.slug);
 console.log("flavor:", state.region.flavor?.name);
 console.log("npc:", state.npcs[0]?.persona.name);
 console.log("bible logline:", state.bible?.logline);
-console.log("bible beats:", state.bible?.beats.map((b) => b.id));
+console.log(
+  "bible beats:",
+  state.bible?.beats.map((b) => b.id),
+);
 
 // Simulate some dialog turns then check beat eligibility
 const npc = state.npcs[0];
@@ -39,15 +36,12 @@ saveSlot(slot.slug, state);
 
 const reloaded = loadSlot(slot.slug);
 console.log("reloaded bible logline:", reloaded.state.bible?.logline);
-console.log(
-  "reloaded revealed beats:",
-  Array.from(reloaded.state.revealedBeats),
-);
-console.log(
-  "next plantable after reveal:",
-  pickPlantableBeat(reloaded.state)?.id,
-);
+console.log("reloaded revealed beats:", Array.from(reloaded.state.revealedBeats));
+console.log("next plantable after reveal:", pickPlantableBeat(reloaded.state)?.id);
 
-console.log("listed:", listSaves().map((s) => s.name));
+console.log(
+  "listed:",
+  listSaves().map((s) => s.name),
+);
 deleteSlot(slot.slug);
 console.log("deleted.");

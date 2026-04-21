@@ -1,5 +1,5 @@
-import blessed from "neo-blessed";
 import type { Widgets } from "blessed";
+import blessed from "neo-blessed";
 
 export interface MenuHandlers {
   onNewGame: () => void;
@@ -32,9 +32,7 @@ export function mountMenu(
   opts: MenuOptions,
 ): () => void {
   const continueLabel =
-    opts.saveCount > 0
-      ? `  Continue (${opts.saveCount})`.padEnd(14)
-      : "  Continue    ";
+    opts.saveCount > 0 ? `  Continue (${opts.saveCount})`.padEnd(14) : "  Continue    ";
 
   const items: { label: string; key: MenuKey; enabled: boolean }[] = [
     { label: "  New Game    ", key: "new", enabled: true },

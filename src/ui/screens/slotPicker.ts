@@ -1,6 +1,6 @@
 import type { Widgets } from "blessed";
 import blessed from "neo-blessed";
-import { deleteSlot, type SaveMeta } from "../../persistence/save.js";
+import { type SaveMeta, deleteSlot } from "../../persistence/save.js";
 
 export interface SlotPickerHandlers {
   onSelect: (slug: string) => void;

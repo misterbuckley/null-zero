@@ -92,9 +92,7 @@ const MIGRATIONS: string[] = [
 
 function currentVersion(db: Db): number {
   const tableRow = db
-    .prepare(
-      "SELECT name FROM sqlite_master WHERE type='table' AND name='schema_version'",
-    )
+    .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='schema_version'")
     .get() as { name?: string } | undefined;
   if (!tableRow?.name) return 0;
   const row = db.prepare("SELECT version FROM schema_version").get() as
