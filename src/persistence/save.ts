@@ -10,6 +10,9 @@ import {
 import type { Item } from "../game/item.js";
 import type { DialogTurn, Npc } from "../game/npc.js";
 import type { GameState } from "../game/state.js";
+import type { Region, RegionExit } from "../world/region.js";
+import { setTile } from "../world/region.js";
+import { makeExit } from "../world/tile.js";
 import { decodeTiles, encodeTiles } from "./codec.js";
 import { type Db, openDb } from "./db.js";
 import { savesDir, slotPath, slugify } from "./paths.js";
@@ -164,26 +167,7 @@ function setMeta(db: Db, key: string, value: string): void {
 }
 
 function writeState(db: Db, state: GameState): void {
-  const region = state.region;
-  db.prepare(
-    `INSERT INTO regions (id, width, height, spawn_x, spawn_y, tiles, flavor_json)
-     VALUES (?, ?, ?, ?, ?, ?, ?)
-     ON CONFLICT(id) DO UPDATE SET
-       width = excluded.width,
-       height = excluded.height,
-       spawn_x = excluded.spawn_x,
-       spawn_y = excluded.spawn_y,
-       tiles = excluded.tiles,
-       flavor_json = excluded.flavor_json`,
-  ).run(
-    region.id,
-    region.width,
-    region.height,
-    region.spawn.x,
-    region.spawn.y,
-    encodeTiles(region.tiles),
-    region.flavor ? JSON.stringify(region.flavor) : null,
-  );
+  writeRegions(db, state);
 
   db.prepare(
     `INSERT INTO player (id, region_id, x, y) VALUES (1, ?, ?, ?)
@@ -191,7 +175,7 @@ function writeState(db: Db, state: GameState): void {
        region_id = excluded.region_id,
        x = excluded.x,
        y = excluded.y`,
-  ).run(region.id, state.player.x, state.player.y);
+  ).run(state.region.id, state.player.x, state.player.y);
 
   db.prepare("DELETE FROM log_entries").run();
   const insertLog = db.prepare("INSERT INTO log_entries (ts, text, kind) VALUES (?, ?, ?)");
@@ -201,6 +185,42 @@ function writeState(db: Db, state: GameState): void {
   writeItems(db, state.items);
   writeStory(db, state.bible, state.revealedBeats);
   setMeta(db, "last_reveal_at", String(state.lastRevealAt));
+}
+
+function writeRegions(db: Db, state: GameState): void {
+  // Drop regions that are no longer referenced by state.regions.
+  const keepIds = Object.keys(state.regions);
+  const placeholders = keepIds.map(() => "?").join(",") || "''";
+  db.prepare(`DELETE FROM regions WHERE id NOT IN (${placeholders})`).run(...keepIds);
+
+  const upsert = db.prepare(
+    `INSERT INTO regions (id, place_id, width, height, spawn_x, spawn_y, tiles, flavor_json, exits_json, visited)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(id) DO UPDATE SET
+       place_id = excluded.place_id,
+       width = excluded.width,
+       height = excluded.height,
+       spawn_x = excluded.spawn_x,
+       spawn_y = excluded.spawn_y,
+       tiles = excluded.tiles,
+       flavor_json = excluded.flavor_json,
+       exits_json = excluded.exits_json,
+       visited = excluded.visited`,
+  );
+  for (const region of Object.values(state.regions)) {
+    upsert.run(
+      region.id,
+      region.placeId ?? null,
+      region.width,
+      region.height,
+      region.spawn.x,
+      region.spawn.y,
+      encodeTiles(region.tiles),
+      region.flavor ? JSON.stringify(region.flavor) : null,
+      region.exits ? JSON.stringify(region.exits) : null,
+      state.visitedRegionIds.has(region.id) ? 1 : 0,
+    );
+  }
 }
 
 function writeItems(db: Db, items: Item[]): void {
@@ -333,12 +353,10 @@ function writeNpcs(db: Db, npcs: Npc[]): void {
   }
 }
 
-function readNpcs(db: Db, regionId: string): Npc[] {
+function readNpcs(db: Db): Npc[] {
   const rows = db
-    .prepare(
-      "SELECT id, region_id, x, y, persona_json, memory_summary FROM npcs WHERE region_id = ?",
-    )
-    .all(regionId) as {
+    .prepare("SELECT id, region_id, x, y, persona_json, memory_summary FROM npcs")
+    .all() as {
     id: string;
     region_id: string;
     x: number;
@@ -357,7 +375,7 @@ function readNpcs(db: Db, regionId: string): Npc[] {
     try {
       persona = NpcPersonaSchema.parse(JSON.parse(row.persona_json));
     } catch {
-      continue; // drop corrupted npc silently
+      continue;
     }
     const turnRows = turnStmt.all(row.id) as {
       role: string;
@@ -390,24 +408,66 @@ function readState(db: Db): GameState {
     | undefined;
   if (!player) throw new Error("no player record in save");
 
-  const region = db
+  const regionRows = db
     .prepare(
-      "SELECT id, width, height, spawn_x, spawn_y, tiles, flavor_json FROM regions WHERE id = ?",
+      "SELECT id, place_id, width, height, spawn_x, spawn_y, tiles, flavor_json, exits_json, visited FROM regions",
     )
-    .get(player.region_id) as
-    | {
-        id: string;
-        width: number;
-        height: number;
-        spawn_x: number;
-        spawn_y: number;
-        tiles: Buffer;
-        flavor_json: string | null;
-      }
-    | undefined;
-  if (!region) throw new Error(`region ${player.region_id} not found`);
+    .all() as {
+    id: string;
+    place_id: string | null;
+    width: number;
+    height: number;
+    spawn_x: number;
+    spawn_y: number;
+    tiles: Buffer;
+    flavor_json: string | null;
+    exits_json: string | null;
+    visited: number;
+  }[];
 
-  const tiles = decodeTiles(region.tiles, region.width * region.height);
+  const regions: Record<string, Region> = {};
+  const visitedRegionIds = new Set<string>();
+  for (const row of regionRows) {
+    const tiles = decodeTiles(row.tiles, row.width * row.height);
+    let flavor: RegionFlavor | undefined;
+    if (row.flavor_json) {
+      try {
+        flavor = RegionFlavorSchema.parse(JSON.parse(row.flavor_json));
+      } catch {
+        // drop silently
+      }
+    }
+    let exits: RegionExit[] | undefined;
+    if (row.exits_json) {
+      try {
+        exits = JSON.parse(row.exits_json) as RegionExit[];
+      } catch {
+        exits = undefined;
+      }
+    }
+    const region: Region = {
+      id: row.id,
+      placeId: row.place_id ?? undefined,
+      width: row.width,
+      height: row.height,
+      spawn: { x: row.spawn_x, y: row.spawn_y },
+      tiles,
+      flavor,
+      exits,
+    };
+    // Restore exit tile exitIds from the exits list (codec stored only the kind).
+    if (exits) {
+      for (const e of exits) {
+        setTile(region, e.x, e.y, makeExit(e.id));
+      }
+    }
+    regions[region.id] = region;
+    if (row.visited) visitedRegionIds.add(region.id);
+  }
+
+  const current = regions[player.region_id];
+  if (!current) throw new Error(`region ${player.region_id} not found`);
+
   const logRows = db.prepare("SELECT ts, text, kind FROM log_entries ORDER BY idx").all() as {
     ts: number;
     text: string;
@@ -426,31 +486,19 @@ function readState(db: Db): GameState {
   const metaMap = new Map(metaRows.map((r) => [r.key, r.value]));
   const genre = metaMap.get("genre") ?? "dark fantasy";
 
-  let flavor: RegionFlavor | undefined;
-  if (region.flavor_json) {
-    try {
-      flavor = RegionFlavorSchema.parse(JSON.parse(region.flavor_json));
-    } catch {
-      // if stored flavor fails validation, drop it silently
-    }
-  }
-
-  const npcs = readNpcs(db, region.id);
+  const npcs = readNpcs(db);
   const items = readItems(db);
   const story = readStory(db);
   const lastRevealAtRaw = metaMap.get("last_reveal_at");
   const lastRevealAt = lastRevealAtRaw ? Number(lastRevealAtRaw) : Date.now();
 
+  if (visitedRegionIds.size === 0) visitedRegionIds.add(current.id);
+
   return {
     genre,
-    region: {
-      id: region.id,
-      width: region.width,
-      height: region.height,
-      spawn: { x: region.spawn_x, y: region.spawn_y },
-      tiles,
-      flavor,
-    },
+    region: current,
+    regions,
+    visitedRegionIds,
     player: { x: player.x, y: player.y },
     log,
     npcs,

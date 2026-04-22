@@ -1,5 +1,22 @@
 import { z } from "zod";
 
+export const PlaceSchema = z.object({
+  id: z.string().describe("Short stable identifier like 'p01'. Lowercase, 2–4 chars."),
+  name: z.string().describe("Short, evocative name (1–4 words). No trailing punctuation."),
+  description: z
+    .string()
+    .describe(
+      "One or two sentences setting this location apart from the others: mood, one concrete detail.",
+    ),
+  biome: z
+    .string()
+    .describe(
+      "Short biome tag used for procedural generation. Allowed: 'cave', 'ruin', 'street', 'tunnel', 'chamber'.",
+    ),
+});
+
+export type Place = z.infer<typeof PlaceSchema>;
+
 export const RegionFlavorSchema = z.object({
   name: z
     .string()
@@ -151,6 +168,13 @@ export const StoryBibleSchema = z.object({
     .max(6)
     .describe(
       "Soft-ordered beats that can fire as the player plays. Earlier beats should have easier preconditions.",
+    ),
+  places: z
+    .array(PlaceSchema)
+    .min(3)
+    .max(7)
+    .describe(
+      "3–7 distinct named locations the player can discover. The first place is where they begin; others connect via exits.",
     ),
 });
 

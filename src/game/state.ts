@@ -1,4 +1,4 @@
-import type { StoryBible } from "../ai/schemas.js";
+import type { RegionFlavor, StoryBible } from "../ai/schemas.js";
 import type { Region } from "../world/region.js";
 import type { Item } from "./item.js";
 import type { Npc } from "./npc.js";
@@ -14,6 +14,8 @@ export interface LogEntry {
 export interface GameState {
   genre: string;
   region: Region;
+  regions: Record<string, Region>;
+  visitedRegionIds: Set<string>;
   player: { x: number; y: number };
   log: LogEntry[];
   npcs: Npc[];
@@ -21,6 +23,7 @@ export interface GameState {
   bible: StoryBible | null;
   revealedBeats: Set<string>;
   lastRevealAt: number;
+  flavorPrefetch?: Record<string, RegionFlavor>;
 }
 
 const MAX_LOG = 200;
@@ -30,4 +33,10 @@ export function pushLog(state: GameState, text: string, kind: LogKind = "note"):
   if (state.log.length > MAX_LOG) {
     state.log.splice(0, state.log.length - MAX_LOG);
   }
+}
+
+export function switchRegion(state: GameState, region: Region): void {
+  state.regions[region.id] = region;
+  state.region = region;
+  state.visitedRegionIds.add(region.id);
 }

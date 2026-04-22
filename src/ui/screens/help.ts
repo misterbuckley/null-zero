@@ -20,6 +20,8 @@ const SECTIONS: { title: string; rows: [string, string][] }[] = [
       ["g", "pick up item on this tile"],
       ["i", "open inventory"],
       [":", "free-text command (look, read, give…)"],
+      ["M", "world map"],
+      [">", "step onto an exit tile to travel"],
       ["S", "save"],
       ["?", "this help"],
       ["q / esc", "save and return to menu"],

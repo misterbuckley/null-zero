@@ -18,6 +18,7 @@ Rules:
 - Use 'b01', 'b02', ... for beat ids.
 - Keep every field concrete and specific. Names should sound like they belong to this genre. No generic placeholders.
 - For at least one late beat, include 'action_hooks': 1–2 concrete actions the player could take (verbs: look, examine, read, use, give, open, close) on a plausible target. When the player performs that action, the beat pays off. Only use hooks for things that would naturally exist in the region — don't invent.
+- The 'places' array must list 3–7 distinct locations that belong to this story. The first place is the player's starting location. Give each a unique id ('p01', 'p02', ...). Biome tags are limited to 'cave', 'ruin', 'street', 'tunnel', 'chamber'. NPCs and beats may gesture at these places, so they should feel like real somewheres, not blank set dressing.
   `.trim();
 
   return jsonComplete(
@@ -99,6 +100,29 @@ export function fallbackBible(genre: string): StoryBible {
           action_hooks: [{ verb: "examine", target: "brass pendant" }],
         },
       ],
+      places: [
+        {
+          id: "p01",
+          name: "The Ashened Crypt",
+          description:
+            "A low, damp vault beneath a half-collapsed chapel. Soot clings to the ceiling; the air tastes of old smoke.",
+          biome: "cave",
+        },
+        {
+          id: "p02",
+          name: "The Rookery, burnt",
+          description:
+            "What remains of the orphanage: four blackened walls open to the sky, floorboards gnawed by rain.",
+          biome: "ruin",
+        },
+        {
+          id: "p03",
+          name: "Under-market of bones",
+          description:
+            "A chain of tunnels where the city's dispossessed trade by candle. The walls are stacked skull-deep.",
+          biome: "tunnel",
+        },
+      ],
     },
   };
 
@@ -144,6 +168,29 @@ export function fallbackBible(genre: string): StoryBible {
           reveals:
             "Everyone sent here is carrying the same half-sentence, and none of them finish it.",
           delivery_hints: ["npc_rumor", "environmental"],
+        },
+      ],
+      places: [
+        {
+          id: "p01",
+          name: "The waiting chamber",
+          description:
+            "A low stone room with nothing in it but the sense that someone has been here recently and left in a hurry.",
+          biome: "chamber",
+        },
+        {
+          id: "p02",
+          name: "The outer passage",
+          description:
+            "A corridor that curves both left and right past the chamber. The air moves — something breathes at its far end.",
+          biome: "tunnel",
+        },
+        {
+          id: "p03",
+          name: "The quiet yard",
+          description:
+            "A courtyard half-reclaimed by weeds. Whatever was here has been gone long enough that the silence feels habitual.",
+          biome: "ruin",
         },
       ],
     }

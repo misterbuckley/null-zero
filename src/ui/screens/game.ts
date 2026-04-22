@@ -29,6 +29,8 @@ export interface GameScreenHandlers {
   onTalk: (session: GameSession, npc: Npc) => void;
   onNudge: (session: GameSession, candidate: NudgeCandidate) => Promise<void>;
   onCommand: (session: GameSession, raw: string) => Promise<void>;
+  onTravel: (session: GameSession, exitId: string) => Promise<void>;
+  onMap: (session: GameSession) => void;
 }
 
 type KeyBinding = [string[], () => void];
@@ -73,11 +75,23 @@ export function mountGame(
     border: { type: "line" },
     style: { border: { fg: "grey" }, bg: "black" },
     padding: { left: 1, right: 1 },
-    label: ` ${session.slot.name} · ${state.genre}${state.region.flavor ? ` · ${state.region.flavor.name}` : ""} `,
+    label: " ",
   });
 
-  const cache = buildRegionCache(state.region);
+  const updateLabel = () => {
+    log.setLabel(
+      ` ${session.slot.name} · ${state.genre}${state.region.flavor ? ` · ${state.region.flavor.name}` : ""} `,
+    );
+  };
+  updateLabel();
+
+  let cache = buildRegionCache(state.region);
   let lastMoveAt = 0;
+
+  const refreshRegionCache = () => {
+    cache = buildRegionCache(state.region);
+    updateLabel();
+  };
 
   const render = () => {
     const tail = state.log.slice(-5).map((entry) => {
@@ -119,6 +133,7 @@ export function mountGame(
         byX.set(item.x, { glyph: ITEM_GLYPH, priority: 1 });
       }
       for (const npc of state.npcs) {
+        if (npc.regionId !== region.id) continue;
         if (npc.y === y) {
           const existing = byX.get(npc.x);
           if (!existing || existing.priority < 2) {
@@ -152,13 +167,32 @@ export function mountGame(
       render();
       return;
     }
-    if (state.npcs.some((n) => n.x === nx && n.y === ny)) {
+    if (state.npcs.some((n) => n.regionId === state.region.id && n.x === nx && n.y === ny)) {
       pushLog(state, "Someone is standing there. Press t to speak.");
       render();
       return;
     }
     state.player.x = nx;
     state.player.y = ny;
+
+    if (target?.kind === "exit" && target.exitId) {
+      const exit = state.region.exits?.find((e) => e.id === target.exitId);
+      if (exit) {
+        pushLog(state, `${exit.label}...`);
+        render();
+        handlers
+          .onTravel(session, exit.id)
+          .then(() => {
+            refreshRegionCache();
+            render();
+          })
+          .catch((err: Error) => {
+            pushLog(state, `(the passage falters: ${err.message})`);
+            render();
+          });
+        return;
+      }
+    }
     render();
   };
 
@@ -235,6 +269,7 @@ export function mountGame(
     let best: Npc | null = null;
     let bestDist = Number.POSITIVE_INFINITY;
     for (const npc of state.npcs) {
+      if (npc.regionId !== state.region.id) continue;
       const dx = npc.x - px;
       const dy = npc.y - py;
       if (Math.abs(dx) > 1 || Math.abs(dy) > 1) continue;
@@ -328,6 +363,13 @@ export function mountGame(
     [[":"], openCommand],
     [["?"], toggleHelp],
     [["S"], manualSave],
+    [
+      ["M"],
+      () => {
+        if (modalOpen()) return;
+        handlers.onMap(session);
+      },
+    ],
     [["q", "escape"], exit],
   ];
   for (const [keys, fn] of bindings) screen.key(keys, fn);

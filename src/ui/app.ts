@@ -7,6 +7,7 @@ import { carriedItems, onGround } from "../game/item.js";
 import { newGame } from "../game/newGame.js";
 import type { Npc } from "../game/npc.js";
 import { pushLog } from "../game/state.js";
+import { prefetchAdjacentFlavor, travelThroughExit } from "../game/travel.js";
 import { applyActionHooks, resolveIntent } from "../game/verbs.js";
 import { slugify } from "../persistence/paths.js";
 import { createSlot, listSaves, loadSlot, saveSlot, slotExists } from "../persistence/save.js";
@@ -19,6 +20,7 @@ import { mountMenu } from "./screens/menu.js";
 import { mountNewGamePrompt } from "./screens/newGamePrompt.js";
 import { mountSettings } from "./screens/settings.js";
 import { mountSlotPicker } from "./screens/slotPicker.js";
+import { mountWorldMap } from "./screens/worldMap.js";
 
 export interface App {
   run(): void;
@@ -137,6 +139,7 @@ export function createApp(): App {
       const seed = (Date.now() & 0xffffffff) >>> 0;
       const state = await newGame({ seed, genre, gateway });
       const meta = createSlot(name, seed, state);
+      prefetchAdjacentFlavor(state, gateway);
       dismiss();
       startGame({ slot: meta, state });
     } catch (err) {
@@ -160,6 +163,7 @@ export function createApp(): App {
       onSelect: (slug) => {
         try {
           const { meta, state } = loadSlot(slug);
+          prefetchAdjacentFlavor(state, getGateway());
           startGame({ slot: meta, state });
         } catch (err) {
           showError(`Load failed: ${(err as Error).message}`);
@@ -178,6 +182,38 @@ export function createApp(): App {
       onTalk: (s, npc) => showDialog(s, npc),
       onNudge: (s, candidate) => runNudge(s, candidate),
       onCommand: (s, raw) => runCommand(s, raw),
+      onTravel: (s, exitId) => runTravel(s, exitId),
+      onMap: (s) => showMap(s),
+    });
+  };
+
+  const runTravel = async (session: GameSession, exitId: string): Promise<void> => {
+    const state = session.state;
+    const exit = state.region.exits?.find((e) => e.id === exitId);
+    if (!exit) return;
+
+    const gateway = getGateway();
+    const alreadyBuilt = exit.toRegionId !== null && !!state.regions[exit.toRegionId];
+    let dismiss: (() => void) | null = null;
+    if (!alreadyBuilt) {
+      dismiss = showLoading(screen, gateway ? "The path opens" : "Finding a way (offline)");
+    }
+    try {
+      await travelThroughExit(state, exit, gateway);
+    } finally {
+      dismiss?.();
+    }
+    try {
+      saveSlot(session.slot.slug, state);
+    } catch {
+      // silent
+    }
+  };
+
+  const showMap = (session: GameSession): void => {
+    unmountCurrent?.();
+    unmountCurrent = mountWorldMap(screen, session.state, {
+      onClose: () => startGame(session),
     });
   };
 
@@ -190,7 +226,12 @@ export function createApp(): App {
         .map((i) => i.shape.name),
       carriedItems: carriedItems(state.items).map((i) => i.shape.name),
       adjacentNpcs: state.npcs
-        .filter((n) => Math.abs(n.x - state.player.x) <= 1 && Math.abs(n.y - state.player.y) <= 1)
+        .filter(
+          (n) =>
+            n.regionId === state.region.id &&
+            Math.abs(n.x - state.player.x) <= 1 &&
+            Math.abs(n.y - state.player.y) <= 1,
+        )
         .map((n) => `${n.persona.name} (${n.persona.archetype})`),
       regionFeatures: state.region.flavor?.notable_features ?? [],
     };

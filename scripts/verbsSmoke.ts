@@ -92,7 +92,10 @@ if (!gift) {
   process.exit(1);
 }
 pickUp(gift);
-console.log("carrying before give:", carriedItems(state.items).map((i) => i.shape.name));
+console.log(
+  "carrying before give:",
+  carriedItems(state.items).map((i) => i.shape.name),
+);
 
 const giveMsg = await resolveIntent({
   state,
@@ -101,9 +104,15 @@ const giveMsg = await resolveIntent({
   raw: `give ${gift.shape.name} to ${npc.persona.name}`,
 });
 console.log("give:", giveMsg);
-console.log("carrying after give:", carriedItems(state.items).map((i) => i.shape.name));
+console.log(
+  "carrying after give:",
+  carriedItems(state.items).map((i) => i.shape.name),
+);
 console.log("npc memory:", npc.memorySummary);
-console.log("state.items contains gift:", state.items.some((i) => i.id === gift.id));
+console.log(
+  "state.items contains gift:",
+  state.items.some((i) => i.id === gift.id),
+);
 
 // --- give: missing recipient ---
 const missRecipient = await resolveIntent({

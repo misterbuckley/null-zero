@@ -116,6 +116,16 @@ const MIGRATIONS: string[] = [
   DELETE FROM schema_version;
   INSERT INTO schema_version (version) VALUES (6);
   `,
+
+  // v7 — multi-region world: exits + place ids + visited set
+  `
+  ALTER TABLE regions ADD COLUMN place_id TEXT;
+  ALTER TABLE regions ADD COLUMN exits_json TEXT;
+  ALTER TABLE regions ADD COLUMN visited INTEGER NOT NULL DEFAULT 0;
+
+  DELETE FROM schema_version;
+  INSERT INTO schema_version (version) VALUES (7);
+  `,
 ];
 
 function currentVersion(db: Db): number {
