@@ -1,4 +1,4 @@
-import type { NpcPersona } from "../ai/schemas.js";
+import type { DialogAgenda, NpcPersona } from "../ai/schemas.js";
 
 export interface DialogTurn {
   role: "player" | "npc";
@@ -14,4 +14,8 @@ export interface Npc {
   persona: NpcPersona;
   memorySummary: string;
   turns: DialogTurn[];
+  // Transient per-session dialog state. Not persisted to disk.
+  agenda?: DialogAgenda | null;
+  agendaTurnsUsed?: number;
+  agendaClosed?: boolean;
 }

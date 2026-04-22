@@ -7,6 +7,7 @@ import type { SaveMeta } from "../../persistence/save.js";
 import { type NudgeCandidate, pickNudge } from "../../story/beats.js";
 import { tileAt } from "../../world/region.js";
 import { isPassable } from "../../world/tile.js";
+import { renderLogTail } from "../logLayout.js";
 import {
   ITEM_GLYPH,
   NPC_GLYPH,
@@ -17,6 +18,10 @@ import {
 import { mountCommandPrompt } from "./commandPrompt.js";
 import { mountHelp } from "./help.js";
 import { mountInventory } from "./inventory.js";
+
+const LOG_BOX_HEIGHT = 7;
+const LOG_BORDER_ROWS = 2; // top + bottom
+const LOG_PADDING_COLS = 2; // left + right
 
 export interface GameSession {
   slot: SaveMeta;
@@ -70,7 +75,7 @@ export function mountGame(
     left: 0,
     right: 0,
     bottom: 0,
-    height: 7,
+    height: LOG_BOX_HEIGHT,
     tags: true,
     border: { type: "line" },
     style: { border: { fg: "grey" }, bg: "black" },
@@ -94,18 +99,17 @@ export function mountGame(
   };
 
   const render = () => {
-    const tail = state.log.slice(-5).map((entry) => {
-      const color = entry.kind === "nudge" ? "magenta" : "white";
-      return `{${color}-fg}${entry.text}{/}`;
-    });
-    log.setContent(tail.join("\n"));
-
     // Use screen dims (always resolved from stdout) rather than viewport.width,
     // which can be a raw "100%" string before blessed has laid out.
     const screenW = Number(screen.width) || 0;
     const screenH = Number(screen.height) || 0;
+
+    const logInnerW = Math.max(0, screenW - LOG_BORDER_ROWS - LOG_PADDING_COLS);
+    const logInnerH = Math.max(0, LOG_BOX_HEIGHT - LOG_BORDER_ROWS);
+    log.setContent(renderLogTail(state.log, logInnerW, logInnerH));
+
     const innerW = screenW;
-    const innerH = Math.max(0, screenH - 7);
+    const innerH = Math.max(0, screenH - LOG_BOX_HEIGHT);
     if (innerW <= 0 || innerH <= 0) {
       screen.render();
       return;

@@ -304,3 +304,28 @@ export const IntentSchema = z.object({
 });
 
 export type Intent = z.infer<typeof IntentSchema>;
+
+export const DialogAgendaSchema = z.object({
+  driving_intent: z
+    .string()
+    .describe(
+      "One sentence naming what this NPC is trying to accomplish in this specific conversation — get information, warn, plead, deflect, test. Not their life goal.",
+    ),
+  target_points: z
+    .array(z.string())
+    .min(1)
+    .max(2)
+    .describe(
+      "1–2 concrete things they want to say, reveal, or learn before the conversation ends. Oblique is fine; vague is not.",
+    ),
+  max_turns: z
+    .number()
+    .int()
+    .min(2)
+    .max(6)
+    .describe(
+      "Rough turn budget after which the NPC should wrap up, even if points aren't fully landed. Integer 2–6.",
+    ),
+});
+
+export type DialogAgenda = z.infer<typeof DialogAgendaSchema>;
