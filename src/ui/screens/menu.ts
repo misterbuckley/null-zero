@@ -122,12 +122,14 @@ export function mountMenu(
   };
 
   list.on("select", (_item: unknown, index: number) => choose(index));
-  list.key(["q"], () => handlers.onQuit());
+  const onQuit = () => handlers.onQuit();
+  list.key(["q"], onQuit);
   list.focus();
 
   screen.render();
 
   return () => {
+    list.unkey("q", onQuit);
     panel.destroy();
     screen.render();
   };

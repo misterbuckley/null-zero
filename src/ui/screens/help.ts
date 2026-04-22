@@ -17,9 +17,20 @@ const SECTIONS: { title: string; rows: [string, string][] }[] = [
     title: "interaction",
     rows: [
       ["t", "talk to adjacent person"],
+      ["g", "pick up item on this tile"],
+      ["i", "open inventory"],
+      [":", "free-text command (look, read, give…)"],
       ["S", "save"],
       ["?", "this help"],
       ["q / esc", "save and return to menu"],
+    ],
+  },
+  {
+    title: "inventory",
+    rows: [
+      ["j / k", "move selection"],
+      ["d", "drop selected item"],
+      ["i / esc", "close"],
     ],
   },
   {

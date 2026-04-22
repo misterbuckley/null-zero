@@ -1,7 +1,18 @@
 import type { DialogTurn } from "../game/npc.js";
 import type { Gateway } from "./gateway.js";
-import type { NpcPersona, RegionFlavor, StoryBeat } from "./schemas.js";
+import { CANONICAL_VERBS, type NpcPersona, type RegionFlavor, type StoryBeat } from "./schemas.js";
 import type { Message, StreamChunk } from "./types.js";
+
+export interface AffordanceItem {
+  name: string;
+  description: string;
+  where: "ground" | "carried";
+}
+
+export interface Affordances {
+  items: AffordanceItem[];
+  features: string[];
+}
 
 export interface DialogContext {
   persona: NpcPersona;
@@ -11,6 +22,7 @@ export interface DialogContext {
   memorySummary: string;
   playerInput: string;
   plantBeat?: StoryBeat | null;
+  affordances?: Affordances;
 }
 
 const HISTORY_WINDOW = 10;
@@ -47,7 +59,7 @@ export async function* dialogTurn(
 
   messages.push({ role: "user", content: ctx.playerInput });
 
-  const system = buildSystemPrompt(ctx);
+  const system = buildDialogSystemPrompt(ctx);
 
   try {
     yield* gateway.stream({
@@ -62,8 +74,8 @@ export async function* dialogTurn(
   }
 }
 
-function buildSystemPrompt(ctx: DialogContext): string {
-  const { persona, region, genre, plantBeat } = ctx;
+export function buildDialogSystemPrompt(ctx: DialogContext): string {
+  const { persona, region, genre, plantBeat, affordances } = ctx;
   const place = region
     ? `The scene is "${region.name}": ${region.description}`
     : "The setting is unclear.";
@@ -71,6 +83,8 @@ function buildSystemPrompt(ctx: DialogContext): string {
   const plant = plantBeat
     ? `\nIf — and only if — it feels natural in this exchange, let this slip into what you say (obliquely, not as exposition): ${plantBeat.reveals}\nIf the conversation is not a fit, do not force it.`
     : "";
+
+  const affordanceSection = affordances ? buildAffordanceSection(affordances) : "";
 
   return [
     `You are ${persona.name}, ${persona.archetype}, in a "${genre}" world.`,
@@ -82,6 +96,7 @@ function buildSystemPrompt(ctx: DialogContext): string {
     `Your disposition toward the stranger speaking to you: ${persona.disposition}.`,
     place,
     plant,
+    affordanceSection,
     "",
     "Rules:",
     "- You are not an assistant. You are this person. Stay in first person.",
@@ -89,14 +104,40 @@ function buildSystemPrompt(ctx: DialogContext): string {
     "- Do not narrate actions in asterisks or brackets. Speak, only.",
     "- Do not repeat the player's words back to them.",
     "- If the conversation is finished, say goodbye plainly and stop.",
+    "- Any concrete suggestion you give the stranger must be something they could actually do in this world: an action from the verb list, targeting a thing in the Affordances. If it isn't in that list, keep your hint oblique — metaphor, rumor, feeling — never name an object or place that doesn't exist.",
   ]
     .filter((l) => l !== "")
     .join("\n");
 }
 
+function buildAffordanceSection(aff: Affordances): string {
+  const verbs = CANONICAL_VERBS.filter((v) => v !== "unknown").join(", ");
+  const ground = aff.items.filter((i) => i.where === "ground");
+  const carried = aff.items.filter((i) => i.where === "carried");
+
+  const lines = ["", "Affordances (what the stranger can actually do and reach):"];
+  lines.push(`- Verbs the world understands: ${verbs}.`);
+  if (ground.length > 0) {
+    lines.push("- Nearby objects in this region:");
+    for (const it of ground) lines.push(`  · ${it.name} — ${it.description}`);
+  } else {
+    lines.push("- Nearby objects in this region: none you can see from here.");
+  }
+  if (carried.length > 0) {
+    lines.push("- Things the stranger is carrying:");
+    for (const it of carried) lines.push(`  · ${it.name} — ${it.description}`);
+  }
+  if (aff.features.length > 0) {
+    lines.push(`- Notable features here: ${aff.features.join("; ")}.`);
+  }
+  return lines.join("\n");
+}
+
 async function* fallbackReply(ctx: DialogContext): AsyncIterable<StreamChunk> {
-  const { persona, playerInput } = ctx;
+  const { persona, playerInput, affordances } = ctx;
   const lower = playerInput.toLowerCase().trim();
+  const ground = affordances?.items.filter((i) => i.where === "ground") ?? [];
+  const firstObject = ground[0]?.name;
 
   let line: string;
   if (lower === "" || lower === "hello" || lower === "hi") {
@@ -106,7 +147,11 @@ async function* fallbackReply(ctx: DialogContext): AsyncIterable<StreamChunk> {
   } else if (lower.includes("who")) {
     line = `"I am ${persona.name}. ${persona.archetype.charAt(0).toUpperCase() + persona.archetype.slice(1)}. That is all that matters at this hour."`;
   } else if (lower.includes("what") && lower.includes("do")) {
-    line = `"${persona.goals[0] ?? "Whatever I must."} Little else."`;
+    line = firstObject
+      ? `"${persona.goals[0] ?? "Whatever I must."} You could start by looking at the ${firstObject}, if you have eyes for it."`
+      : `"${persona.goals[0] ?? "Whatever I must."} Little else."`;
+  } else if ((lower.includes("help") || lower.includes("advice")) && firstObject) {
+    line = `"If I were you, I'd examine the ${firstObject} before I asked another question."`;
   } else {
     line = `${persona.name} considers you for a long moment. "I've no answer for that. Not yet."`;
   }

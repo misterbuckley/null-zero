@@ -1,11 +1,13 @@
 import { existsSync, readdirSync, unlinkSync } from "node:fs";
 import {
+  ItemSchema,
   NpcPersonaSchema,
   type RegionFlavor,
   RegionFlavorSchema,
   type StoryBible,
   StoryBibleSchema,
 } from "../ai/schemas.js";
+import type { Item } from "../game/item.js";
 import type { DialogTurn, Npc } from "../game/npc.js";
 import type { GameState } from "../game/state.js";
 import { decodeTiles, encodeTiles } from "./codec.js";
@@ -192,11 +194,80 @@ function writeState(db: Db, state: GameState): void {
   ).run(region.id, state.player.x, state.player.y);
 
   db.prepare("DELETE FROM log_entries").run();
-  const insertLog = db.prepare("INSERT INTO log_entries (ts, text) VALUES (?, ?)");
-  for (const entry of state.log) insertLog.run(entry.ts, entry.text);
+  const insertLog = db.prepare("INSERT INTO log_entries (ts, text, kind) VALUES (?, ?, ?)");
+  for (const entry of state.log) insertLog.run(entry.ts, entry.text, entry.kind);
 
   writeNpcs(db, state.npcs);
+  writeItems(db, state.items);
   writeStory(db, state.bible, state.revealedBeats);
+  setMeta(db, "last_reveal_at", String(state.lastRevealAt));
+}
+
+function writeItems(db: Db, items: Item[]): void {
+  db.prepare("DELETE FROM items").run();
+  const insert = db.prepare(
+    `INSERT INTO items (id, region_id, x, y, carried, carried_idx, shape_json, properties_json)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+  );
+  let carriedIdx = 0;
+  for (const item of items) {
+    const carried = item.regionId === null;
+    insert.run(
+      item.id,
+      item.regionId,
+      item.x,
+      item.y,
+      carried ? 1 : 0,
+      carried ? carriedIdx++ : null,
+      JSON.stringify(item.shape),
+      JSON.stringify(item.properties),
+    );
+  }
+}
+
+function readItems(db: Db): Item[] {
+  const rows = db
+    .prepare(
+      `SELECT id, region_id, x, y, carried, carried_idx, shape_json, properties_json
+       FROM items
+       ORDER BY carried DESC, carried_idx ASC, id ASC`,
+    )
+    .all() as {
+    id: string;
+    region_id: string | null;
+    x: number | null;
+    y: number | null;
+    carried: number;
+    carried_idx: number | null;
+    shape_json: string;
+    properties_json: string;
+  }[];
+
+  const items: Item[] = [];
+  for (const row of rows) {
+    let shape: Item["shape"];
+    try {
+      shape = ItemSchema.parse(JSON.parse(row.shape_json));
+    } catch {
+      continue;
+    }
+    let properties: Record<string, unknown> = {};
+    try {
+      const parsed = JSON.parse(row.properties_json);
+      if (parsed && typeof parsed === "object") properties = parsed as Record<string, unknown>;
+    } catch {
+      // ignore bad properties blob
+    }
+    items.push({
+      id: row.id,
+      regionId: row.carried ? null : row.region_id,
+      x: row.carried ? null : row.x,
+      y: row.carried ? null : row.y,
+      shape,
+      properties,
+    });
+  }
+  return items;
 }
 
 function writeStory(db: Db, bible: StoryBible | null, revealed: Set<string>): void {
@@ -282,7 +353,7 @@ function readNpcs(db: Db, regionId: string): Npc[] {
   );
 
   for (const row of rows) {
-    let persona;
+    let persona: Npc["persona"];
     try {
       persona = NpcPersonaSchema.parse(JSON.parse(row.persona_json));
     } catch {
@@ -337,10 +408,16 @@ function readState(db: Db): GameState {
   if (!region) throw new Error(`region ${player.region_id} not found`);
 
   const tiles = decodeTiles(region.tiles, region.width * region.height);
-  const log = db.prepare("SELECT ts, text FROM log_entries ORDER BY idx").all() as {
+  const logRows = db.prepare("SELECT ts, text, kind FROM log_entries ORDER BY idx").all() as {
     ts: number;
     text: string;
+    kind: string;
   }[];
+  const log = logRows.map((r) => ({
+    ts: r.ts,
+    text: r.text,
+    kind: r.kind === "nudge" ? ("nudge" as const) : ("note" as const),
+  }));
 
   const metaRows = db.prepare("SELECT key, value FROM meta").all() as {
     key: string;
@@ -359,7 +436,10 @@ function readState(db: Db): GameState {
   }
 
   const npcs = readNpcs(db, region.id);
+  const items = readItems(db);
   const story = readStory(db);
+  const lastRevealAtRaw = metaMap.get("last_reveal_at");
+  const lastRevealAt = lastRevealAtRaw ? Number(lastRevealAtRaw) : Date.now();
 
   return {
     genre,
@@ -374,7 +454,9 @@ function readState(db: Db): GameState {
     player: { x: player.x, y: player.y },
     log,
     npcs,
+    items,
     bible: story.bible,
     revealedBeats: story.revealed,
+    lastRevealAt,
   };
 }

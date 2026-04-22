@@ -1,12 +1,22 @@
 import type { Widgets } from "blessed";
 import blessed from "neo-blessed";
+import { dropAt, itemsAt, pickUp } from "../../game/item.js";
 import type { Npc } from "../../game/npc.js";
 import { type GameState, pushLog } from "../../game/state.js";
 import type { SaveMeta } from "../../persistence/save.js";
+import { type NudgeCandidate, pickNudge } from "../../story/beats.js";
 import { tileAt } from "../../world/region.js";
 import { isPassable } from "../../world/tile.js";
-import { NPC_GLYPH, PLAYER_GLYPH, buildRegionCache, renderRow } from "../regionCache.js";
+import {
+  ITEM_GLYPH,
+  NPC_GLYPH,
+  PLAYER_GLYPH,
+  buildRegionCache,
+  renderRow,
+} from "../regionCache.js";
+import { mountCommandPrompt } from "./commandPrompt.js";
 import { mountHelp } from "./help.js";
+import { mountInventory } from "./inventory.js";
 
 export interface GameSession {
   slot: SaveMeta;
@@ -17,12 +27,15 @@ export interface GameScreenHandlers {
   onExit: () => void;
   onSave: (session: GameSession) => void;
   onTalk: (session: GameSession, npc: Npc) => void;
+  onNudge: (session: GameSession, candidate: NudgeCandidate) => Promise<void>;
+  onCommand: (session: GameSession, raw: string) => Promise<void>;
 }
 
 type KeyBinding = [string[], () => void];
 
 const MOVE_INTERVAL_MS = 50;
 const AUTOSAVE_INTERVAL_MS = 60_000;
+const NUDGE_TICK_MS = 15_000;
 
 export function mountGame(
   screen: Widgets.Screen,
@@ -65,12 +78,24 @@ export function mountGame(
 
   const cache = buildRegionCache(state.region);
   let lastMoveAt = 0;
-  let lastLogLength = -1;
 
   const render = () => {
-    const innerW = Number(viewport.width) || 0;
-    const innerH = Number(viewport.height) || 0;
-    if (innerW <= 0 || innerH <= 0) return;
+    const tail = state.log.slice(-5).map((entry) => {
+      const color = entry.kind === "nudge" ? "magenta" : "white";
+      return `{${color}-fg}${entry.text}{/}`;
+    });
+    log.setContent(tail.join("\n"));
+
+    // Use screen dims (always resolved from stdout) rather than viewport.width,
+    // which can be a raw "100%" string before blessed has laid out.
+    const screenW = Number(screen.width) || 0;
+    const screenH = Number(screen.height) || 0;
+    const innerW = screenW;
+    const innerH = Math.max(0, screenH - 7);
+    if (innerW <= 0 || innerH <= 0) {
+      screen.render();
+      return;
+    }
 
     const { region } = state;
     const px = state.player.x;
@@ -87,26 +112,34 @@ export function mountGame(
         continue;
       }
 
-      const overlays = [];
-      for (const npc of state.npcs) {
-        if (npc.y === y) overlays.push({ x: npc.x, glyph: NPC_GLYPH });
+      const byX = new Map<number, { glyph: string; priority: number }>();
+      for (const item of state.items) {
+        if (item.regionId !== region.id) continue;
+        if (item.y !== y || item.x === null) continue;
+        byX.set(item.x, { glyph: ITEM_GLYPH, priority: 1 });
       }
-      if (py === y) overlays.push({ x: px, glyph: PLAYER_GLYPH });
+      for (const npc of state.npcs) {
+        if (npc.y === y) {
+          const existing = byX.get(npc.x);
+          if (!existing || existing.priority < 2) {
+            byX.set(npc.x, { glyph: NPC_GLYPH, priority: 2 });
+          }
+        }
+      }
+      if (py === y) byX.set(px, { glyph: PLAYER_GLYPH, priority: 3 });
+      const overlays = Array.from(byX.entries()).map(([x, v]) => ({ x, glyph: v.glyph }));
 
       lines[row] = renderRow(cache, y, camX, camX + innerW, overlays);
     }
     viewport.setContent(lines.join("\n"));
-
-    if (state.log.length !== lastLogLength) {
-      lastLogLength = state.log.length;
-      const tail = state.log.slice(-5).map((entry) => `{white-fg}${entry.text}{/}`);
-      log.setContent(tail.join("\n"));
-    }
-
     screen.render();
   };
 
+  const modalOpen = (): boolean =>
+    unmountHelp !== null || unmountInventory !== null || unmountCommand !== null;
+
   const attempt = (dx: number, dy: number) => {
+    if (modalOpen()) return;
     const now = Date.now();
     if (now - lastMoveAt < MOVE_INTERVAL_MS) return;
     lastMoveAt = now;
@@ -130,6 +163,7 @@ export function mountGame(
   };
 
   const talk = () => {
+    if (modalOpen()) return;
     const npc = findAdjacentNpc();
     if (!npc) {
       pushLog(state, "No one is near enough to hear you.");
@@ -137,6 +171,62 @@ export function mountGame(
       return;
     }
     handlers.onTalk(session, npc);
+  };
+
+  const grab = () => {
+    if (modalOpen()) return;
+    const here = itemsAt(state.items, state.region.id, state.player.x, state.player.y);
+    const target = here[0];
+    if (!target) {
+      pushLog(state, "Nothing here to pick up.");
+      render();
+      return;
+    }
+    pickUp(target);
+    pushLog(state, `You pick up ${stripName(target.shape.name)}.`);
+    render();
+  };
+
+  const openCommand = () => {
+    if (modalOpen()) return;
+    unmountCommand = mountCommandPrompt(screen, {
+      onSubmit: (raw) => {
+        unmountCommand?.();
+        unmountCommand = null;
+        pushLog(state, `> ${raw}`);
+        render();
+        handlers
+          .onCommand(session, raw)
+          .catch((err: Error) => {
+            pushLog(state, `(the attempt falters: ${err.message})`);
+          })
+          .finally(() => render());
+      },
+      onCancel: () => {
+        unmountCommand?.();
+        unmountCommand = null;
+        render();
+      },
+    });
+  };
+
+  const openInventory = () => {
+    if (modalOpen()) return;
+    unmountInventory = mountInventory(
+      screen,
+      { items: state.items },
+      {
+        onDrop: (item) => {
+          dropAt(item, state.region.id, state.player.x, state.player.y);
+          pushLog(state, `You drop ${stripName(item.shape.name)}.`);
+        },
+        onClose: () => {
+          unmountInventory?.();
+          unmountInventory = null;
+          render();
+        },
+      },
+    );
   };
 
   const findAdjacentNpc = (): Npc | null => {
@@ -177,8 +267,27 @@ export function mountGame(
 
   const autosaveTimer = setInterval(autosave, AUTOSAVE_INTERVAL_MS);
 
+  let nudgeInFlight = false;
+  const tickNudge = () => {
+    if (nudgeInFlight) return;
+    if (modalOpen()) return;
+    const candidate = pickNudge(state);
+    if (!candidate) return;
+    nudgeInFlight = true;
+    handlers
+      .onNudge(session, candidate)
+      .catch(() => {
+        // silent — nudges are best-effort
+      })
+      .finally(() => {
+        nudgeInFlight = false;
+        render();
+      });
+  };
+  const nudgeTimer = setInterval(tickNudge, NUDGE_TICK_MS);
+
   const exit = () => {
-    if (unmountHelp) return;
+    if (modalOpen()) return;
     try {
       handlers.onSave(session);
     } catch {
@@ -188,7 +297,10 @@ export function mountGame(
   };
 
   let unmountHelp: (() => void) | null = null;
+  let unmountInventory: (() => void) | null = null;
+  let unmountCommand: (() => void) | null = null;
   const toggleHelp = () => {
+    if (unmountInventory) return;
     if (unmountHelp) {
       unmountHelp();
       unmountHelp = null;
@@ -211,6 +323,9 @@ export function mountGame(
     [["b"], () => attempt(-1, 1)],
     [["n"], () => attempt(1, 1)],
     [["t"], talk],
+    [["g"], grab],
+    [["i"], openInventory],
+    [[":"], openCommand],
     [["?"], toggleHelp],
     [["S"], manualSave],
     [["q", "escape"], exit],
@@ -219,15 +334,23 @@ export function mountGame(
 
   screen.on("resize", render);
   render();
+  // blessed computes layout during screen.render(); schedule a second pass
+  // so the initial viewport paints once widths are known.
+  setImmediate(render);
 
   return () => {
     clearInterval(autosaveTimer);
+    clearInterval(nudgeTimer);
     screen.removeListener("resize", render);
     for (const [keys, fn] of bindings) {
       for (const key of keys) screen.unkey(key, fn);
     }
     unmountHelp?.();
     unmountHelp = null;
+    unmountInventory?.();
+    unmountInventory = null;
+    unmountCommand?.();
+    unmountCommand = null;
     container.destroy();
     screen.render();
   };
@@ -235,4 +358,8 @@ export function mountGame(
 
 function clamp(value: number, lo: number, hi: number): number {
   return Math.max(lo, Math.min(hi, value));
+}
+
+function stripName(s: string): string {
+  return s.replace(/[{}]/g, "");
 }

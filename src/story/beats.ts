@@ -7,6 +7,11 @@ export interface BeatMetrics {
   talkedToAny: boolean;
 }
 
+export const NUDGE_IDLE_MS = 5 * 60 * 1000;
+export const NUDGE_HINTS = new Set(["dream", "environmental"]);
+
+export type NudgeHint = "dream" | "environmental";
+
 export function computeMetrics(state: GameState): BeatMetrics {
   let dialogTurns = 0;
   let talkedToAny = false;
@@ -30,8 +35,45 @@ export function pickPlantableBeat(state: GameState): StoryBeat | null {
   return null;
 }
 
-export function markRevealed(state: GameState, beatId: string): void {
+export function eligibleBeats(state: GameState): StoryBeat[] {
+  if (!state.bible) return [];
+  const metrics = computeMetrics(state);
+  return state.bible.beats.filter(
+    (beat) =>
+      !state.revealedBeats.has(beat.id) &&
+      beat.preconditions.every((p) => evalPrecondition(p, metrics)),
+  );
+}
+
+export function markRevealed(state: GameState, beatId: string, now = Date.now()): void {
   state.revealedBeats.add(beatId);
+  state.lastRevealAt = now;
+}
+
+export function pickNudgeHint(beat: StoryBeat): NudgeHint | null {
+  for (const hint of beat.delivery_hints) {
+    if (hint === "dream" || hint === "environmental") return hint;
+  }
+  return null;
+}
+
+export interface NudgeCandidate {
+  beat: StoryBeat;
+  hint: NudgeHint;
+}
+
+export function pickNudge(state: GameState, now = Date.now()): NudgeCandidate | null {
+  if (now - state.lastRevealAt < NUDGE_IDLE_MS) return null;
+  if (!state.bible) return null;
+  const metrics = computeMetrics(state);
+  for (const beat of state.bible.beats) {
+    if (state.revealedBeats.has(beat.id)) continue;
+    if (!beat.preconditions.every((p) => evalPrecondition(p, metrics))) continue;
+    const hint = pickNudgeHint(beat);
+    if (!hint) continue;
+    return { beat, hint };
+  }
+  return null;
 }
 
 function evalPrecondition(expr: string, m: BeatMetrics): boolean {

@@ -1,7 +1,8 @@
 import type { Widgets } from "blessed";
 import blessed from "neo-blessed";
-import { dialogTurn } from "../../ai/dialog.js";
+import { type Affordances, dialogTurn } from "../../ai/dialog.js";
 import type { Gateway } from "../../ai/gateway.js";
+import { carriedItems, onGround } from "../../game/item.js";
 import type { DialogTurn, Npc } from "../../game/npc.js";
 import { type GameState, pushLog } from "../../game/state.js";
 import { markRevealed, pickPlantableBeat } from "../../story/beats.js";
@@ -130,6 +131,7 @@ export function mountDialog(
 
     const stateSnapshot = syncNpcIntoState(opts.state, working);
     const beat = pickPlantableBeat(stateSnapshot);
+    const affordances = buildAffordances(opts.state);
 
     try {
       for await (const chunk of dialogTurn(opts.gateway, {
@@ -140,6 +142,7 @@ export function mountDialog(
         memorySummary: working.memorySummary,
         playerInput: text,
         plantBeat: beat,
+        affordances,
       })) {
         if (chunk.kind === "delta" && chunk.text) {
           liveBuffer += chunk.text;
@@ -201,6 +204,26 @@ function syncNpcIntoState(state: GameState, working: Npc): GameState {
   const idx = state.npcs.findIndex((n) => n.id === working.id);
   if (idx >= 0) state.npcs[idx] = working;
   return state;
+}
+
+function buildAffordances(state: GameState): Affordances {
+  const regionId = state.region.id;
+  const ground = state.items
+    .filter((i) => onGround(i) && i.regionId === regionId)
+    .map((i) => ({
+      name: i.shape.name,
+      description: i.shape.description,
+      where: "ground" as const,
+    }));
+  const carried = carriedItems(state.items).map((i) => ({
+    name: i.shape.name,
+    description: i.shape.description,
+    where: "carried" as const,
+  }));
+  return {
+    items: [...ground, ...carried],
+    features: state.region.flavor?.notable_features ?? [],
+  };
 }
 
 function renderTurn(turn: DialogTurn, npcName: string): string {

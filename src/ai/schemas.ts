@@ -52,6 +52,43 @@ export const NpcPersonaSchema = z.object({
 
 export type NpcPersona = z.infer<typeof NpcPersonaSchema>;
 
+export const CANONICAL_VERBS = [
+  "look",
+  "examine",
+  "read",
+  "use",
+  "give",
+  "open",
+  "close",
+  "unknown",
+] as const;
+
+export type CanonicalVerb = (typeof CANONICAL_VERBS)[number];
+
+export const ActionHookSchema = z.object({
+  verb: z
+    .enum(CANONICAL_VERBS)
+    .describe("One canonical verb. Use the same set the player-parser uses."),
+  target: z
+    .string()
+    .optional()
+    .describe(
+      "Short noun phrase the player's action must be directed at (item name, NPC name, or visible feature). Omit to match any target.",
+    ),
+  instrument: z
+    .string()
+    .optional()
+    .describe(
+      "Short noun phrase the player must use as the tool or offering (e.g., for 'give' the thing being handed over). Omit to match any.",
+    ),
+  location: z
+    .string()
+    .optional()
+    .describe("Where the action must happen, if relevant. Omit to match any location."),
+});
+
+export type ActionHook = z.infer<typeof ActionHookSchema>;
+
 export const StoryBeatSchema = z.object({
   id: z
     .string()
@@ -73,6 +110,13 @@ export const StoryBeatSchema = z.object({
     .max(3)
     .describe(
       "Where this beat might naturally surface. Allowed values: 'npc_rumor', 'found_document', 'environmental', 'dream'.",
+    ),
+  action_hooks: z
+    .array(ActionHookSchema)
+    .max(3)
+    .optional()
+    .describe(
+      "0–3 concrete player actions that pay off this beat. If the player performs any of them, the beat fires. Only set this when the beat's reveal is naturally triggered by a specific action on something that exists in the world.",
     ),
 });
 
@@ -112,3 +156,61 @@ export const StoryBibleSchema = z.object({
 
 export type StoryBeat = z.infer<typeof StoryBeatSchema>;
 export type StoryBible = z.infer<typeof StoryBibleSchema>;
+
+export const ItemSchema = z.object({
+  name: z.string().describe("Short specific name the player would use (1–4 words). No article."),
+  description: z
+    .string()
+    .describe(
+      "One or two sentences of what the player sees and senses when they look at it. Present tense.",
+    ),
+  kind: z
+    .string()
+    .describe(
+      "Short category word: 'tool', 'document', 'trinket', 'container', 'garment', 'fragment', etc.",
+    ),
+  tags: z
+    .array(z.string())
+    .min(0)
+    .max(5)
+    .describe(
+      "0–5 short lowercase tags: materials, uses, states (e.g., 'brass', 'readable', 'wet').",
+    ),
+});
+
+export type ItemShape = z.infer<typeof ItemSchema>;
+
+export const ItemListSchema = z.object({
+  items: z
+    .array(ItemSchema)
+    .min(1)
+    .max(3)
+    .describe("1–3 items that fit the region's mood and genre. Nothing generic."),
+});
+
+export type ItemList = z.infer<typeof ItemListSchema>;
+
+export const IntentSchema = z.object({
+  verb: z
+    .enum(CANONICAL_VERBS)
+    .describe(
+      "The canonical verb that best matches the player's phrasing. Use 'unknown' if none fit.",
+    ),
+  target: z
+    .string()
+    .optional()
+    .describe(
+      "Short noun phrase the action is directed at (an item name, NPC name, or visible feature). Omit if not specified.",
+    ),
+  instrument: z
+    .string()
+    .optional()
+    .describe("Short noun phrase the action uses as a tool or offering. Omit if not specified."),
+  location: z.string().optional().describe("Where the action happens, if stated. Omit otherwise."),
+  extra: z
+    .string()
+    .optional()
+    .describe("Anything else worth preserving from the player's phrasing. Keep terse."),
+});
+
+export type Intent = z.infer<typeof IntentSchema>;

@@ -280,6 +280,9 @@ export function mountSettings(screen: Widgets.Screen, handlers: SettingsHandlers
   screen.render();
 
   return () => {
+    list.unkey("enter", activate);
+    list.unkey("s", persist);
+    list.unkey("escape", close);
     panel.destroy();
     screen.render();
   };

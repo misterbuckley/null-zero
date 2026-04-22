@@ -61,12 +61,14 @@ export function mountGenrePicker(
     const g = GENRES[index];
     if (g) handlers.onSelect(g.value);
   });
-  list.key(["escape"], () => handlers.onCancel());
+  const onEscape = () => handlers.onCancel();
+  list.key(["escape"], onEscape);
   list.focus();
 
   screen.render();
 
   return () => {
+    list.unkey("escape", onEscape);
     panel.destroy();
     screen.render();
   };

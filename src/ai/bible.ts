@@ -17,6 +17,7 @@ Rules:
 - Preconditions MUST use only these forms: 'dialog_turns>=N', 'moves>=N', 'talked_to_any'.
 - Use 'b01', 'b02', ... for beat ids.
 - Keep every field concrete and specific. Names should sound like they belong to this genre. No generic placeholders.
+- For at least one late beat, include 'action_hooks': 1–2 concrete actions the player could take (verbs: look, examine, read, use, give, open, close) on a plausible target. When the player performs that action, the beat pays off. Only use hooks for things that would naturally exist in the region — don't invent.
   `.trim();
 
   return jsonComplete(
@@ -65,6 +66,14 @@ export function fallbackBible(genre: string): StoryBible {
       ],
       beats: [
         {
+          id: "b00",
+          title: "A name in the half-dark",
+          preconditions: [],
+          reveals:
+            "The name Miren keeps surfacing in the player's thoughts, unbidden, tied to a child's hand they can almost remember letting go.",
+          delivery_hints: ["dream", "npc_rumor"],
+        },
+        {
           id: "b01",
           title: "The smell of smoke",
           preconditions: ["dialog_turns>=3"],
@@ -87,6 +96,7 @@ export function fallbackBible(genre: string): StoryBible {
           reveals:
             "The pendant the priest keeps touching is a key. It opens a door under the orphanage ruin.",
           delivery_hints: ["npc_rumor", "environmental"],
+          action_hooks: [{ verb: "examine", target: "brass pendant" }],
         },
       ],
     },
@@ -111,6 +121,14 @@ export function fallbackBible(genre: string): StoryBible {
         },
       ],
       beats: [
+        {
+          id: "b00",
+          title: "The sending, half-remembered",
+          preconditions: [],
+          reveals:
+            "An instruction the player can almost recall being given, by a voice they cannot place, in a room they did not leave willingly.",
+          delivery_hints: ["dream", "environmental"],
+        },
         {
           id: "b01",
           title: "A shared forgetting",

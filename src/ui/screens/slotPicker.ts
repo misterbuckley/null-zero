@@ -197,16 +197,20 @@ export function mountSlotPicker(
     const slot = slots[index];
     if (slot) handlers.onSelect(slot.slug);
   });
-  list.key(["escape"], () => handlers.onCancel());
-  list.key(["d"], () => {
+  const onEscape = () => handlers.onCancel();
+  const onDelete = () => {
     const slot = slots[selectedIndex()];
     if (slot) confirmDelete(slot);
-  });
+  };
+  list.key(["escape"], onEscape);
+  list.key(["d"], onDelete);
   list.focus();
 
   screen.render();
 
   return () => {
+    list.unkey("escape", onEscape);
+    list.unkey("d", onDelete);
     panel.destroy();
     screen.render();
   };

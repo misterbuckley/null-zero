@@ -88,6 +88,34 @@ const MIGRATIONS: string[] = [
   DELETE FROM schema_version;
   INSERT INTO schema_version (version) VALUES (4);
   `,
+
+  // v5 — log entry kind (for nudges)
+  `
+  ALTER TABLE log_entries ADD COLUMN kind TEXT NOT NULL DEFAULT 'note';
+
+  DELETE FROM schema_version;
+  INSERT INTO schema_version (version) VALUES (5);
+  `,
+
+  // v6 — items (on ground + in inventory)
+  `
+  CREATE TABLE IF NOT EXISTS items (
+    id TEXT PRIMARY KEY,
+    region_id TEXT,
+    x INTEGER,
+    y INTEGER,
+    carried INTEGER NOT NULL DEFAULT 0,
+    carried_idx INTEGER,
+    shape_json TEXT NOT NULL,
+    properties_json TEXT NOT NULL DEFAULT '{}'
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_items_region ON items(region_id);
+  CREATE INDEX IF NOT EXISTS idx_items_carried ON items(carried, carried_idx);
+
+  DELETE FROM schema_version;
+  INSERT INTO schema_version (version) VALUES (6);
+  `,
 ];
 
 function currentVersion(db: Db): number {

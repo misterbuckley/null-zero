@@ -10,6 +10,7 @@ export interface RegionCache {
 
 export const PLAYER_GLYPH = "{cyan-fg}{bold}@{/}";
 export const NPC_GLYPH = "{yellow-fg}{bold}@{/}";
+export const ITEM_GLYPH = "{magenta-fg}{bold}*{/}";
 
 export interface Overlay {
   x: number;
