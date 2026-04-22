@@ -9,6 +9,7 @@
   },
   "scripts": {
     "dev": "tsx src/main.ts",
+    "doctor": "tsx src/doctor.ts",
     "typecheck": "tsc --noEmit",
     "build": "tsc",
     "start": "node dist/main.js",
