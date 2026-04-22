@@ -61,6 +61,13 @@ export function fallbackItems(genre: string): ItemShape[] {
         kind: "trinket",
         tags: ["brass", "broken", "marked"],
       },
+      {
+        name: "small wooden box",
+        description:
+          "A squat box of unfinished wood, the lid loose in its groove. Nothing rattles inside, but the grain is darkened where someone's hand has rested there often.",
+        kind: "container",
+        tags: ["wood", "container", "empty"],
+      },
     ],
     cyberpunk: [
       {

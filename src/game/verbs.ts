@@ -2,7 +2,21 @@ import type { Gateway } from "../ai/gateway.js";
 import { narrateAction } from "../ai/narrate.js";
 import type { ActionHook, Intent } from "../ai/schemas.js";
 import { eligibleBeats, markRevealed } from "../story/beats.js";
-import { type Item, carriedItems, itemsAt, onGround } from "./item.js";
+import {
+  type Item,
+  carriedItems,
+  containerIdOf,
+  contentsOf,
+  dropAt,
+  isContainer,
+  isWearable,
+  isWorn,
+  itemsAt,
+  onGround,
+  pickUp,
+  setContainerId,
+  setWorn,
+} from "./item.js";
 import type { Npc } from "./npc.js";
 import type { GameState } from "./state.js";
 
@@ -23,7 +37,28 @@ export async function resolveIntent(ctx: ResolveContext): Promise<string> {
       return resolveRead(ctx);
     case "give":
       return resolveGive(ctx);
+    case "take":
+      return resolveTake(ctx);
+    case "drop":
+      return resolveDrop(ctx);
+    case "put":
+      return resolvePut(ctx);
+    case "search":
+      return resolveSearch(ctx);
+    case "wait":
+      return resolveWait(ctx);
+    case "listen":
+      return resolveSensory(ctx, "listen");
+    case "smell":
+      return resolveSensory(ctx, "smell");
+    case "wear":
+      return resolveWear(ctx);
+    case "remove":
+      return resolveRemoveWorn(ctx);
+    case "combine":
+      return resolveCombine(ctx);
     case "use":
+      return resolveUse(ctx);
     case "open":
     case "close":
     case "unknown":
@@ -51,7 +86,17 @@ async function resolveLook(ctx: ResolveContext): Promise<string> {
   if (npc) return `${npc.persona.name}, ${npc.persona.archetype}. ${npc.persona.appearance}`;
 
   const item = matchItem(state, target);
-  if (item) return `${item.shape.name}: ${item.shape.description}`;
+  if (item) {
+    if (isContainer(item)) {
+      const inside = contentsOf(state.items, item);
+      if (inside.length === 0) {
+        return `${item.shape.name}: ${item.shape.description} It is empty.`;
+      }
+      const names = inside.map((i) => i.shape.name).join(", ");
+      return `${item.shape.name}: ${item.shape.description} Inside: ${names}.`;
+    }
+    return `${item.shape.name}: ${item.shape.description}`;
+  }
 
   const feature = matchFeature(state, target);
   if (feature) return `You study ${feature}. It yields little more than its outline.`;
@@ -102,7 +147,6 @@ async function resolveGive(ctx: ResolveContext): Promise<string> {
     return narrate(ctx, `No one matching "${targetName}" is close enough to accept it.`);
   }
 
-  // Hand the item to the NPC. They remember it.
   state.items = state.items.filter((it) => it.id !== item.id);
   const note = `player gave them ${item.shape.name}`;
   npc.memorySummary = npc.memorySummary ? `${npc.memorySummary}; ${note}` : note;
@@ -110,11 +154,263 @@ async function resolveGive(ctx: ResolveContext): Promise<string> {
   return `You offer ${item.shape.name} to ${npc.persona.name}. ${npc.persona.name} takes it.`;
 }
 
+async function resolveTake(ctx: ResolveContext): Promise<string> {
+  const { state, intent } = ctx;
+  const target = (intent.target ?? "").trim();
+  if (!target) {
+    const here = itemsAt(state.items, state.region.id, state.player.x, state.player.y);
+    if (here.length === 0) return "Nothing here to take.";
+    const first = here[0]!;
+    pickUp(first);
+    return `You take ${first.shape.name}.`;
+  }
+
+  // "take X from Y" → intent.location is typically the container
+  const fromName = (intent.location ?? intent.instrument ?? "").trim();
+  if (fromName) {
+    const container = matchItem(state, fromName);
+    if (!container) return `No ${fromName} here to take from.`;
+    if (!isContainer(container)) {
+      return `${container.shape.name} is not something you can take anything out of.`;
+    }
+    const inside = contentsOf(state.items, container);
+    const found = inside.find((it) => nameMatches(it.shape.name, target));
+    if (!found) return `Nothing matching "${target}" inside ${container.shape.name}.`;
+    setContainerId(found, null);
+    pickUp(found);
+    return `You take ${found.shape.name} out of ${container.shape.name}.`;
+  }
+
+  // Plain "take X" — from ground, player tile first then adjacent.
+  const item = matchItem(state, target);
+  if (!item) return `No "${target}" within reach.`;
+  if (carriedItems(state.items).some((it) => it.id === item.id)) {
+    return `You are already carrying ${item.shape.name}.`;
+  }
+  pickUp(item);
+  return `You take ${item.shape.name}.`;
+}
+
+async function resolveDrop(ctx: ResolveContext): Promise<string> {
+  const { state, intent } = ctx;
+  const target = (intent.target ?? "").trim();
+  if (!target) {
+    const held = carriedItems(state.items);
+    if (held.length === 0) return "You are carrying nothing.";
+    const first = held[0]!;
+    dropAt(first, state.region.id, state.player.x, state.player.y);
+    setWorn(first, false);
+    return `You drop ${first.shape.name}.`;
+  }
+  const item = carriedItems(state.items).find((it) => nameMatches(it.shape.name, target));
+  if (!item) return `You are not carrying anything matching "${target}".`;
+  dropAt(item, state.region.id, state.player.x, state.player.y);
+  setWorn(item, false);
+  return `You drop ${item.shape.name}.`;
+}
+
+async function resolvePut(ctx: ResolveContext): Promise<string> {
+  const { state, intent } = ctx;
+  const instrument = (intent.instrument ?? intent.target ?? "").trim();
+  const destName = (intent.location ?? "").trim();
+  if (!instrument) return "The player wants to put something but did not name what.";
+  if (!destName) return "Put it where? Name a container.";
+
+  const item = carriedItems(state.items).find((it) => nameMatches(it.shape.name, instrument));
+  if (!item) return `You are not carrying anything matching "${instrument}".`;
+
+  const container = matchItem(state, destName);
+  if (!container) return `No "${destName}" here to put anything into.`;
+  if (!isContainer(container)) return `${container.shape.name} is not a container.`;
+  if (container.id === item.id) return "You cannot put something into itself.";
+
+  setWorn(item, false);
+  setContainerId(item, container.id);
+  return `You put ${item.shape.name} into ${container.shape.name}.`;
+}
+
+async function resolveSearch(ctx: ResolveContext): Promise<string> {
+  const { state, intent } = ctx;
+  const target = (intent.target ?? "").trim();
+  if (!target) {
+    return narrate(
+      ctx,
+      `The player searches the area around them. Here: [${visibleHere(state) || "—"}].`,
+    );
+  }
+  const container = matchItem(state, target);
+  if (container && isContainer(container)) {
+    const inside = contentsOf(state.items, container);
+    if (inside.length === 0) {
+      return `You search ${container.shape.name}. Nothing inside.`;
+    }
+    return `You search ${container.shape.name}. Inside: ${inside
+      .map((i) => i.shape.name)
+      .join(", ")}.`;
+  }
+  return narrate(
+    ctx,
+    `The player searches "${target}". Keep the answer concrete: either a subtle detail they notice, or an honest nothing-found.`,
+  );
+}
+
+async function resolveWait(ctx: ResolveContext): Promise<string> {
+  return narrate(
+    ctx,
+    "The player waits, doing nothing for a beat. Describe what passes while they wait — 1–2 sentences.",
+  );
+}
+
+async function resolveSensory(ctx: ResolveContext, sense: "listen" | "smell"): Promise<string> {
+  const { state } = ctx;
+  const flavor = state.region.flavor;
+  if (!flavor) return narrate(ctx, `The player tries to ${sense} but the space is featureless.`);
+  if (sense === "smell") {
+    const scents = flavor.scents.join(", ");
+    return narrate(
+      ctx,
+      `The player breathes in. Scents here: ${scents}. Weave one sentence of sensation.`,
+    );
+  }
+  return narrate(
+    ctx,
+    `The player listens. Ambience: ${flavor.ambience}. Describe what they hear in 1–2 sentences — let at least one sound carry weight.`,
+  );
+}
+
+async function resolveWear(ctx: ResolveContext): Promise<string> {
+  const { state, intent } = ctx;
+  const target = (intent.target ?? "").trim();
+  if (!target) return "Wear what? Name a garment.";
+  const item = carriedItems(state.items).find((it) => nameMatches(it.shape.name, target));
+  if (!item) return `You are not carrying anything matching "${target}".`;
+  if (!isWearable(item)) {
+    return `${item.shape.name} is not something you can put on.`;
+  }
+  if (isWorn(item)) return `You are already wearing ${item.shape.name}.`;
+  setWorn(item, true);
+  return `You put on ${item.shape.name}.`;
+}
+
+async function resolveRemoveWorn(ctx: ResolveContext): Promise<string> {
+  const { state, intent } = ctx;
+  const target = (intent.target ?? "").trim();
+  const worn = carriedItems(state.items).filter(isWorn);
+  if (worn.length === 0) return "You are not wearing anything removable.";
+  const item = target ? worn.find((it) => nameMatches(it.shape.name, target)) : (worn[0] ?? null);
+  if (!item) return `You are not wearing anything matching "${target}".`;
+  setWorn(item, false);
+  return `You take off ${item.shape.name}.`;
+}
+
+async function resolveCombine(ctx: ResolveContext): Promise<string> {
+  const { state, intent } = ctx;
+  const aName = (intent.target ?? "").trim();
+  const bName = (intent.instrument ?? intent.location ?? "").trim();
+  if (!aName || !bName) return "Combine what with what?";
+  const held = carriedItems(state.items);
+  const a = held.find((it) => nameMatches(it.shape.name, aName));
+  const b = held.find((it) => nameMatches(it.shape.name, bName) && it.id !== a?.id);
+  if (!a || !b) {
+    return "You need to be carrying both items to combine them.";
+  }
+
+  const artifact = findMatchingArtifact(state, a, b);
+  if (!artifact) {
+    return narrate(
+      ctx,
+      `The player tries to combine ${a.shape.name} with ${b.shape.name}. Nothing coheres — describe the failure in a single sentence, leaving both items unchanged.`,
+    );
+  }
+
+  const result: Item = {
+    id: `item-art-${state.region.id}-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+    regionId: null,
+    x: null,
+    y: null,
+    shape: {
+      name: artifact.name,
+      description: artifact.description,
+      kind: artifact.result_kind,
+      tags: artifact.result_tags,
+    },
+    properties: {},
+  };
+  state.items = state.items.filter((it) => it.id !== a.id && it.id !== b.id);
+  state.items.push(result);
+  return `You combine ${a.shape.name} and ${b.shape.name}. Something new takes shape: ${artifact.name}. ${artifact.description}`;
+}
+
+function findMatchingArtifact(state: GameState, a: Item, b: Item) {
+  const artifacts = state.bible?.artifacts ?? [];
+  const tagsA = new Set(a.shape.tags.map((t) => t.toLowerCase()));
+  const tagsB = new Set(b.shape.tags.map((t) => t.toLowerCase()));
+  for (const art of artifacts) {
+    const [ra, rb] = art.recipe_tags.map((t) => t.toLowerCase()) as [string, string];
+    if ((tagsA.has(ra) && tagsB.has(rb)) || (tagsA.has(rb) && tagsB.has(ra))) {
+      return art;
+    }
+  }
+  return null;
+}
+
+async function resolveUse(ctx: ResolveContext): Promise<string> {
+  const { state, intent } = ctx;
+  const targetName = (intent.target ?? "").trim();
+  const instrumentName = (intent.instrument ?? "").trim();
+
+  // "use X on <exit|door|gate|way>" → try unlocking.
+  if (instrumentName && looksLikeExitTarget(targetName)) {
+    const exit = findLockedExit(state);
+    if (exit) {
+      return tryUnlock(ctx, exit, instrumentName);
+    }
+  }
+
+  // "use X on <exit label>" — match against an exit label.
+  if (instrumentName && targetName) {
+    const exit = state.region.exits?.find((e) =>
+      e.label ? e.label.toLowerCase().includes(targetName.toLowerCase()) : false,
+    );
+    if (exit?.lockTag) {
+      return tryUnlock(ctx, exit, instrumentName);
+    }
+  }
+
+  return narrate(ctx, describeSituation(ctx));
+}
+
+function looksLikeExitTarget(s: string): boolean {
+  const lower = s.toLowerCase();
+  return /\b(exit|door|gate|way|passage|opening|arch|portal|barrier)\b/.test(lower);
+}
+
+function findLockedExit(state: GameState) {
+  return state.region.exits?.find((e) => !!e.lockTag) ?? null;
+}
+
+function tryUnlock(
+  ctx: ResolveContext,
+  exit: NonNullable<GameState["region"]["exits"]>[number],
+  instrumentName: string,
+): string {
+  const { state } = ctx;
+  const item = carriedItems(state.items).find((it) => nameMatches(it.shape.name, instrumentName));
+  if (!item) return `You are not carrying anything matching "${instrumentName}".`;
+  const tag = (exit.lockTag ?? "").toLowerCase();
+  if (!item.shape.tags.map((t) => t.toLowerCase()).includes(tag)) {
+    return `${item.shape.name} does not fit. The way remains barred.`;
+  }
+  exit.lockTag = undefined;
+  return `${item.shape.name} fits. The way opens.`;
+}
+
 function matchAdjacentNpc(state: GameState, target: string): Npc | null {
   const lower = target.toLowerCase();
   const px = state.player.x;
   const py = state.player.y;
   for (const npc of state.npcs) {
+    if (npc.regionId !== state.region.id) continue;
     if (Math.abs(npc.x - px) > 1 || Math.abs(npc.y - py) > 1) continue;
     if (
       nameMatches(npc.persona.name, lower) ||
@@ -132,12 +428,12 @@ function matchAdjacentNpc(state: GameState, target: string): Npc | null {
 
 function matchItem(state: GameState, target: string): Item | null {
   const lower = target.toLowerCase();
-  // Prefer items on the player's tile, then adjacent, then carried, then anywhere in region.
   const px = state.player.x;
   const py = state.player.y;
   const here = itemsAt(state.items, state.region.id, px, py);
   const adjacent = state.items.filter(
     (it) =>
+      !containerIdOf(it) &&
       it.regionId === state.region.id &&
       it.x !== null &&
       it.y !== null &&
@@ -173,6 +469,7 @@ function visibleHere(state: GameState): string {
   const here = itemsAt(state.items, state.region.id, px, py);
   if (here.length) bits.push(here.map((i) => i.shape.name).join(", "));
   for (const npc of state.npcs) {
+    if (npc.regionId !== state.region.id) continue;
     if (Math.abs(npc.x - px) <= 1 && Math.abs(npc.y - py) <= 1) {
       bits.push(`${npc.persona.name} (${npc.persona.archetype})`);
     }
@@ -187,7 +484,6 @@ function nameMatches(name: string, query: string): boolean {
   if (n === q) return true;
   if (n.includes(q)) return true;
   if (q.includes(n)) return true;
-  // word overlap
   const nWords = new Set(n.split(/[^a-z0-9]+/).filter(Boolean));
   for (const w of q.split(/[^a-z0-9]+/).filter(Boolean)) {
     if (nWords.has(w)) return true;

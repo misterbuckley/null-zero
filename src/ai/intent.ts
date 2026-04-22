@@ -63,6 +63,21 @@ function buildSystem(ctx: IntentParseContext): string {
     "- 'give', 'hand', 'offer' → give",
     "- 'open', 'unlock', 'pry' → open",
     "- 'close', 'shut' → close",
+    "- 'take', 'pick up', 'grab', 'pocket' → take",
+    "- 'drop', 'put down', 'discard' → drop",
+    "- 'put', 'place', 'stash', 'insert' → put",
+    "- 'search', 'rummage', 'dig through' → search",
+    "- 'wait', 'rest', 'linger' → wait",
+    "- 'listen' → listen",
+    "- 'smell', 'sniff' → smell",
+    "- 'wear', 'don', 'put on' → wear",
+    "- 'remove' (of a worn thing), 'take off' → remove",
+    "- 'combine', 'join', 'fit together' → combine",
+    "For 'put X in Y': instrument=X, location=Y.",
+    "For 'take X from Y': target=X, location=Y.",
+    "For 'use X on Y': instrument=X, target=Y.",
+    "For 'give X to Y': instrument=X, target=Y.",
+    "For 'combine X with Y' / 'combine X and Y': target=X, instrument=Y.",
     "Target, instrument, location, extra are short noun phrases quoting the player's language. Omit if absent.",
     "Context the player can currently act on:",
     items,
@@ -105,20 +120,69 @@ export function heuristicIntent(raw: string): Intent {
     unlock: "open",
     close: "close",
     shut: "close",
+    take: "take",
+    grab: "take",
+    pocket: "take",
+    drop: "drop",
+    discard: "drop",
+    put: "put",
+    place: "put",
+    stash: "put",
+    insert: "put",
+    search: "search",
+    rummage: "search",
+    wait: "wait",
+    rest: "wait",
+    linger: "wait",
+    listen: "listen",
+    smell: "smell",
+    sniff: "smell",
+    wear: "wear",
+    don: "wear",
+    remove: "remove",
+    combine: "combine",
+    join: "combine",
   };
+
+  // "pick up X" special two-word prefix
+  if (lower.startsWith("pick up ")) {
+    return { verb: "take", target: lower.slice(8).trim() || undefined };
+  }
+  if (lower.startsWith("put on ")) {
+    return { verb: "wear", target: lower.slice(7).trim() || undefined };
+  }
+  if (lower.startsWith("take off ")) {
+    return { verb: "remove", target: lower.slice(9).trim() || undefined };
+  }
+  if (lower.startsWith("put down ")) {
+    return { verb: "drop", target: lower.slice(9).trim() || undefined };
+  }
 
   const verb = verbMap[firstWord] ?? "unknown";
 
-  // Very light parsing: "give X to Y" → instrument=X, target=Y
   if (verb === "give") {
     const m = rest.match(/^(.+?)\s+to\s+(.+)$/);
     if (m) return { verb, instrument: m[1]?.trim(), target: m[2]?.trim() };
   }
 
-  // "use X on Y" → instrument=X, target=Y
   if (verb === "use") {
     const m = rest.match(/^(.+?)\s+on\s+(.+)$/);
     if (m) return { verb, instrument: m[1]?.trim(), target: m[2]?.trim() };
+  }
+
+  if (verb === "put") {
+    const m = rest.match(/^(.+?)\s+(?:in|into|on)\s+(.+)$/);
+    if (m) return { verb, instrument: m[1]?.trim(), location: m[2]?.trim() };
+  }
+
+  if (verb === "take") {
+    const m = rest.match(/^(.+?)\s+from\s+(.+)$/);
+    if (m) return { verb, target: m[1]?.trim(), location: m[2]?.trim() };
+  }
+
+  if (verb === "combine") {
+    const m = rest.match(/^(.+?)\s+(?:with|and)\s+(.+)$/);
+    if (m) return { verb, target: m[1]?.trim(), instrument: m[2]?.trim() };
   }
 
   return rest ? { verb, target: rest } : { verb };

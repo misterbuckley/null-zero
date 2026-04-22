@@ -17,8 +17,10 @@ Rules:
 - Preconditions MUST use only these forms: 'dialog_turns>=N', 'moves>=N', 'talked_to_any'.
 - Use 'b01', 'b02', ... for beat ids.
 - Keep every field concrete and specific. Names should sound like they belong to this genre. No generic placeholders.
-- For at least one late beat, include 'action_hooks': 1–2 concrete actions the player could take (verbs: look, examine, read, use, give, open, close) on a plausible target. When the player performs that action, the beat pays off. Only use hooks for things that would naturally exist in the region — don't invent.
+- For at least one late beat, include 'action_hooks': 1–2 concrete actions the player could take on a plausible target. Allowed verbs include look, examine, read, use, give, open, close, take, drop, put, search, wait, listen, smell, wear, remove, combine. When the player performs that action, the beat pays off. Only use hooks for things that would naturally exist in the region — don't invent.
 - The 'places' array must list 3–7 distinct locations that belong to this story. The first place is the player's starting location. Give each a unique id ('p01', 'p02', ...). Biome tags are limited to 'cave', 'ruin', 'street', 'tunnel', 'chamber'. NPCs and beats may gesture at these places, so they should feel like real somewheres, not blank set dressing.
+- Optionally include 0–4 'artifacts' — canonical combinations of two items the player might assemble. Each lists the two lowercase tags that must appear across the two inputs (order-insensitive) and the name/description/kind/tags of the result. Use them to reward curiosity, not to gate the story.
+- Optionally include 0–3 'locked_paths'. Each names a 'to_place_id' the player cannot reach without an item carrying 'lock_tag'. Include a one-sentence 'hint' that appears when the player bumps into the lock. Use sparingly, and only when an obvious key-object would fit.
   `.trim();
 
   return jsonComplete(
@@ -121,6 +123,23 @@ export function fallbackBible(genre: string): StoryBible {
           description:
             "A chain of tunnels where the city's dispossessed trade by candle. The walls are stacked skull-deep.",
           biome: "tunnel",
+        },
+      ],
+      artifacts: [
+        {
+          name: "pendant on frayed rope",
+          description:
+            "The brass pendant swings from a short length of sooted rope, knotted tight. A crude thing, but wearable now.",
+          recipe_tags: ["brass", "rope"],
+          result_kind: "trinket",
+          result_tags: ["brass", "rope", "wearable", "pendant"],
+        },
+      ],
+      locked_paths: [
+        {
+          to_place_id: "p03",
+          lock_tag: "brass",
+          hint: "A door of blackened iron, with a small brass keyhole. It does not yield to the hand.",
         },
       ],
     },

@@ -101,6 +101,7 @@ function placeInitialExits(region: Region, bible: StoryBible, rng: RNG): void {
     used.add(`${spot.x},${spot.y}`);
     const exitId = `e-${region.id}-${idx++}`;
     setTile(region, spot.x, spot.y, makeExit(exitId));
+    const lock = (bible.locked_paths ?? []).find((l) => l.to_place_id === place.id);
     const exit: RegionExit = {
       id: exitId,
       x: spot.x,
@@ -108,6 +109,8 @@ function placeInitialExits(region: Region, bible: StoryBible, rng: RNG): void {
       toPlaceId: place.id,
       toRegionId: null,
       label: `→ ${place.name}`,
+      lockTag: lock?.lock_tag,
+      lockHint: lock?.hint,
     };
     region.exits.push(exit);
   }

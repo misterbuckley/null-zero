@@ -178,6 +178,26 @@ export function mountGame(
     if (target?.kind === "exit" && target.exitId) {
       const exit = state.region.exits?.find((e) => e.id === target.exitId);
       if (exit) {
+        if (exit.lockTag) {
+          const key = state.items.find(
+            (it) =>
+              it.regionId === null &&
+              !it.properties.containerId &&
+              it.shape.tags
+                .map((t) => t.toLowerCase())
+                .includes((exit.lockTag ?? "").toLowerCase()),
+          );
+          if (!key) {
+            // Step back; don't move onto a locked tile.
+            state.player.x -= dx;
+            state.player.y -= dy;
+            pushLog(state, exit.lockHint ?? "The way is barred. Something here demands a key.");
+            render();
+            return;
+          }
+          exit.lockTag = undefined;
+          pushLog(state, `${key.shape.name} fits. The way opens.`);
+        }
         pushLog(state, `${exit.label}...`);
         render();
         handlers

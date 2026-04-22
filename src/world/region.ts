@@ -8,6 +8,8 @@ export interface RegionExit {
   toPlaceId: string;
   toRegionId: string | null;
   label: string;
+  lockTag?: string;
+  lockHint?: string;
 }
 
 export interface Region {

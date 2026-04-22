@@ -77,6 +77,16 @@ export const CANONICAL_VERBS = [
   "give",
   "open",
   "close",
+  "take",
+  "drop",
+  "put",
+  "search",
+  "wait",
+  "listen",
+  "smell",
+  "wear",
+  "remove",
+  "combine",
   "unknown",
 ] as const;
 
@@ -176,6 +186,62 @@ export const StoryBibleSchema = z.object({
     .describe(
       "3–7 distinct named locations the player can discover. The first place is where they begin; others connect via exits.",
     ),
+  artifacts: z
+    .array(
+      z.object({
+        name: z
+          .string()
+          .describe(
+            "Short specific name of the combined artifact the player produces (1–4 words).",
+          ),
+        description: z
+          .string()
+          .describe(
+            "One or two sentences describing the artifact the player has just assembled. Present tense.",
+          ),
+        recipe_tags: z
+          .array(z.string())
+          .min(2)
+          .max(2)
+          .describe(
+            "Two lowercase tags that must be present across the two inputs to produce this artifact. Order-insensitive.",
+          ),
+        result_kind: z
+          .string()
+          .describe("Short kind word for the output: 'tool', 'trinket', 'document', etc."),
+        result_tags: z
+          .array(z.string())
+          .min(0)
+          .max(5)
+          .describe("0–5 lowercase tags on the resulting artifact."),
+      }),
+    )
+    .min(0)
+    .max(4)
+    .optional()
+    .describe(
+      "0–4 canonical combinations the player can discover by combining items that carry the required tags.",
+    ),
+  locked_paths: z
+    .array(
+      z.object({
+        to_place_id: z
+          .string()
+          .describe("The id of a place whose inbound exits should be locked from their neighbors."),
+        lock_tag: z
+          .string()
+          .describe(
+            "A lowercase tag the key item must carry. Matched against the tags of an item in inventory.",
+          ),
+        hint: z
+          .string()
+          .describe("One sentence the player sees if they try to enter without the key."),
+      }),
+    )
+    .min(0)
+    .max(3)
+    .optional()
+    .describe("0–3 paths that require a matching tagged item before the player can cross."),
 });
 
 export type StoryBeat = z.infer<typeof StoryBeatSchema>;

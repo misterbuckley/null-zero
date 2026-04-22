@@ -186,6 +186,12 @@ function placeExits(region: Region, state: GameState, placeId: string, rng: RNG)
     const exitId = `e-${region.id}-${exitIdx++}`;
     setTile(region, spot.x, spot.y, makeExit(exitId));
     const destPlace = state.bible?.places.find((p) => p.id === toPlaceId);
+    // Only lock exits that lead away from the player's known world; the
+    // return path back to where they came from must stay open.
+    const lock =
+      toPlaceId !== previousPlace
+        ? (state.bible?.locked_paths ?? []).find((l) => l.to_place_id === toPlaceId)
+        : undefined;
     region.exits.push({
       id: exitId,
       x: spot.x,
@@ -193,6 +199,8 @@ function placeExits(region: Region, state: GameState, placeId: string, rng: RNG)
       toPlaceId,
       toRegionId: toPlaceId === previousPlace ? state.region.id : null,
       label: destPlace ? `→ ${destPlace.name}` : "→ somewhere",
+      lockTag: lock?.lock_tag,
+      lockHint: lock?.hint,
     });
   }
 }

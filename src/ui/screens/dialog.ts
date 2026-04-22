@@ -2,7 +2,7 @@ import type { Widgets } from "blessed";
 import blessed from "neo-blessed";
 import { type Affordances, dialogTurn } from "../../ai/dialog.js";
 import type { Gateway } from "../../ai/gateway.js";
-import { carriedItems, onGround } from "../../game/item.js";
+import { carriedItems, contentsOf, isContainer, isWorn, onGround } from "../../game/item.js";
 import type { DialogTurn, Npc } from "../../game/npc.js";
 import { type GameState, pushLog } from "../../game/state.js";
 import { markRevealed, pickPlantableBeat } from "../../story/beats.js";
@@ -214,11 +214,16 @@ function buildAffordances(state: GameState): Affordances {
       name: i.shape.name,
       description: i.shape.description,
       where: "ground" as const,
+      container: isContainer(i) || undefined,
+      contents: isContainer(i) ? contentsOf(state.items, i).map((c) => c.shape.name) : undefined,
     }));
   const carried = carriedItems(state.items).map((i) => ({
     name: i.shape.name,
     description: i.shape.description,
     where: "carried" as const,
+    worn: isWorn(i) || undefined,
+    container: isContainer(i) || undefined,
+    contents: isContainer(i) ? contentsOf(state.items, i).map((c) => c.shape.name) : undefined,
   }));
   return {
     items: [...ground, ...carried],

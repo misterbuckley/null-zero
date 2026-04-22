@@ -7,6 +7,9 @@ export interface AffordanceItem {
   name: string;
   description: string;
   where: "ground" | "carried";
+  worn?: boolean;
+  container?: boolean;
+  contents?: string[];
 }
 
 export interface Affordances {
@@ -114,23 +117,38 @@ function buildAffordanceSection(aff: Affordances): string {
   const verbs = CANONICAL_VERBS.filter((v) => v !== "unknown").join(", ");
   const ground = aff.items.filter((i) => i.where === "ground");
   const carried = aff.items.filter((i) => i.where === "carried");
+  const worn = carried.filter((i) => i.worn);
 
   const lines = ["", "Affordances (what the stranger can actually do and reach):"];
   lines.push(`- Verbs the world understands: ${verbs}.`);
   if (ground.length > 0) {
     lines.push("- Nearby objects in this region:");
-    for (const it of ground) lines.push(`  · ${it.name} — ${it.description}`);
+    for (const it of ground) lines.push(`  · ${describeAffordanceItem(it)}`);
   } else {
     lines.push("- Nearby objects in this region: none you can see from here.");
   }
   if (carried.length > 0) {
     lines.push("- Things the stranger is carrying:");
-    for (const it of carried) lines.push(`  · ${it.name} — ${it.description}`);
+    for (const it of carried) lines.push(`  · ${describeAffordanceItem(it)}`);
+  }
+  if (worn.length > 0) {
+    lines.push(`- They are wearing: ${worn.map((w) => w.name).join(", ")}.`);
   }
   if (aff.features.length > 0) {
     lines.push(`- Notable features here: ${aff.features.join("; ")}.`);
   }
   return lines.join("\n");
+}
+
+function describeAffordanceItem(it: AffordanceItem): string {
+  const parts = [`${it.name} — ${it.description}`];
+  if (it.worn) parts.push("(worn)");
+  if (it.container) {
+    const inside =
+      it.contents && it.contents.length > 0 ? `(contains: ${it.contents.join(", ")})` : "(empty)";
+    parts.push(inside);
+  }
+  return parts.join(" ");
 }
 
 async function* fallbackReply(ctx: DialogContext): AsyncIterable<StreamChunk> {
